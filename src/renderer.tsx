@@ -3,7 +3,7 @@ import { jsxRenderer } from 'hono/jsx-renderer'
 import { Link, ViteClient } from 'vite-ssr-components/hono'
 import type { AppBindings } from './container'
 import { createContainer } from './container'
-import { AdminSessionBanner, FlashBanner } from './presentation/components/statusBadge'
+import { AdminSessionBanner, FlashBanner, UserSessionBanner } from './presentation/components/statusBadge'
 
 declare module 'hono' {
   interface ContextRenderer {
@@ -22,8 +22,19 @@ async function resolveAdminSessionLabel(c: Context): Promise<string | null> {
   return admin?.email ?? session.adminId
 }
 
+async function resolveUserSessionLabel(c: Context): Promise<string | null> {
+  const { sessionService, profileRepo } = createContainer(c as Context<AppBindings>)
+  const session = await sessionService.resolveFromUserCookie(c)
+  if (!session) return null
+  const profile = await profileRepo.findByUserId(session.userId)
+  return profile?.email ?? session.userId
+}
+
 export const renderer = jsxRenderer(async ({ children, flash, title }, c) => {
-  const adminName = await resolveAdminSessionLabel(c)
+  const [adminName, userName] = await Promise.all([
+    resolveAdminSessionLabel(c),
+    resolveUserSessionLabel(c),
+  ])
   return (
     <html lang="ja">
       <head>
@@ -34,7 +45,12 @@ export const renderer = jsxRenderer(async ({ children, flash, title }, c) => {
         <Link href="/src/style.css" rel="stylesheet" />
       </head>
       <body class="min-h-screen bg-neutral-50 text-neutral-900 antialiased">
-        {adminName ? <AdminSessionBanner name={adminName} /> : null}
+        {adminName || userName ? (
+          <div class="sticky top-0 z-50">
+            {adminName ? <AdminSessionBanner name={adminName} /> : null}
+            {userName ? <UserSessionBanner name={userName} /> : null}
+          </div>
+        ) : null}
         <div class="mx-auto max-w-6xl px-4 py-4">
           <FlashBanner message={flash} />
           {children}

@@ -144,11 +144,24 @@ export function FlashBanner(props: { message?: string | null }) {
   )
 }
 
-/** admin_session があるとき共通レイアウト先頭に表示する sticky バナー */
+/** admin_session / user session 共通レイアウト先頭に表示する sticky 帯の中身 */
+const sessionBannerClass =
+  'border-b border-neutral-200 bg-neutral-100 px-4 py-2 text-center text-sm font-bold text-neutral-800'
+
+/** admin_session があるとき共通レイアウト先頭に表示するバナー */
 export function AdminSessionBanner(props: { name: string }) {
   return (
-    <div class="sticky top-0 z-50 border-b border-neutral-200 bg-neutral-100 px-4 py-2 text-center text-sm font-bold text-neutral-800">
+    <div class={sessionBannerClass}>
       管理者{props.name}としてログイン中
+    </div>
+  )
+}
+
+/** user session があるとき共通レイアウト先頭に表示するバナー */
+export function UserSessionBanner(props: { name: string }) {
+  return (
+    <div class={sessionBannerClass}>
+      ユーザー{props.name}としてログイン中
     </div>
   )
 }
