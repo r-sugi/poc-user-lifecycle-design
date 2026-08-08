@@ -5,6 +5,7 @@ import { banReasonLabelJa, withdrawReasonLabelJa } from '../../domain/shared/Rea
 import { formatJst } from '../../lib/datetime'
 import { consumeFlash, setFlash } from '../../lib/flash'
 import { parseOrThrow } from '../../lib/validate'
+import { isAnonymizedProfile } from '../../usecases/batch/BatchUseCases'
 import { EventTimeline, StatusBadge } from '../components/statusBadge'
 import { signupSchema } from '../schemas/signup'
 
@@ -331,11 +332,19 @@ export async function adminUserDetailPage(c: Context<AppBindings>) {
     } else if (action === 'purgePii') {
       await container.forcePurgeUserPii.execute({ userId: id })
       setFlash(c, 'PII を削除しました')
+    } else if (action === 'anonymizePii') {
+      await container.forceAnonymizeUserPii.execute({ userId: id })
+      setFlash(c, 'PII を匿名化しました')
     }
     return c.redirect(`/admin/users/${id}`)
   }
   const detail = await container.getUserDetail.execute(id)
   const flash = consumeFlash(c)
+  const canHandlePii =
+    (detail.user.status === 'banned' || detail.user.status === 'withdrawn') && !!detail.profile
+  const profileAnonymized = detail.profile ? isAnonymizedProfile(detail.profile) : false
+  const showAnonymizePii = canHandlePii && !profileAnonymized
+  const showPurgePii = canHandlePii
   return c.render(
     <main class="space-y-8">
       <header class="space-y-2">
@@ -570,8 +579,19 @@ export async function adminUserDetailPage(c: Context<AppBindings>) {
                   </button>
                 </form>
               ) : null}
-              {(detail.user.status === 'banned' || detail.user.status === 'withdrawn') &&
-              detail.profile ? (
+              {showAnonymizePii ? (
+                <form method="post" id="admin-anonymize-pii-form">
+                  <input type="hidden" name="action" value="anonymizePii" />
+                  <button
+                    class={btnSecondary}
+                    type="button"
+                    onclick="document.getElementById('admin-anonymize-pii-confirm').showModal()"
+                  >
+                    PII匿名化
+                  </button>
+                </form>
+              ) : null}
+              {showPurgePii ? (
                 <form method="post" id="admin-purge-pii-form">
                   <input type="hidden" name="action" value="purgePii" />
                   <button
@@ -597,6 +617,24 @@ export async function adminUserDetailPage(c: Context<AppBindings>) {
                 </form>
                 <button type="submit" form="admin-unban-form" class={btnSecondary}>
                   解除する
+                </button>
+              </div>
+            </dialog>
+            <dialog
+              id="admin-anonymize-pii-confirm"
+              class="m-auto max-w-sm rounded-lg border border-neutral-200 bg-white p-4 shadow-lg backdrop:bg-black/40"
+            >
+              <p class="text-sm text-neutral-800">
+                メール・表示名をダミー値に置き換え、認証手段を削除します。プロフィール行は残ります。よろしいですか？
+              </p>
+              <div class="mt-4 flex justify-end gap-2">
+                <form method="dialog">
+                  <button type="submit" class={btnSecondary}>
+                    キャンセル
+                  </button>
+                </form>
+                <button type="submit" form="admin-anonymize-pii-form" class={btnSecondary}>
+                  PII匿名化する
                 </button>
               </div>
             </dialog>

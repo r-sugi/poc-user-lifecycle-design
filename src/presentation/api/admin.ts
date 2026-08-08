@@ -71,3 +71,8 @@ adminApi.post('/users/:id/purge-pii', requireAdmin, async (c) => {
   const { forcePurgeUserPii } = createContainer(c)
   return c.json(await forcePurgeUserPii.execute({ userId: c.req.param('id') }))
 })
+
+adminApi.post('/users/:id/anonymize-pii', requireAdmin, async (c) => {
+  const { forceAnonymizeUserPii } = createContainer(c)
+  return c.json(await forceAnonymizeUserPii.execute({ userId: c.req.param('id') }))
+})

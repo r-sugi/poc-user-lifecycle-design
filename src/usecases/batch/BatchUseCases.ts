@@ -13,6 +13,15 @@ import {
 import { AppError } from '../../lib/errors'
 import type { UserRepository } from '../../repositories/UserRepository'
 
+/** 匿名化済みプロフィール判定（email ドメインで識別） */
+export function isAnonymizedProfile(profile: { email: string }): boolean {
+  return profile.email.endsWith('@anon.invalid')
+}
+
+export function anonymizedEmailFor(userId: string): string {
+  return `anon-${userId}@anon.invalid`
+}
+
 /** profiles / identities を物理削除。既に無ければ false。 */
 export async function purgeUserPii(db: Db, userId: string): Promise<boolean> {
   const profile = await db.query.userProfiles.findFirst({
@@ -22,6 +31,29 @@ export async function purgeUserPii(db: Db, userId: string): Promise<boolean> {
 
   await db.delete(userIdentities).where(eq(userIdentities.userId, userId))
   await db.delete(userProfiles).where(eq(userProfiles.userId, userId))
+  return true
+}
+
+/**
+ * profile 行は残し email/表示名をマスク。identities は削除して再ログイン不可にする。
+ * 既に無いか匿名化済みなら false。
+ */
+export async function anonymizeUserPii(db: Db, userId: string, now = new Date()): Promise<boolean> {
+  const profile = await db.query.userProfiles.findFirst({
+    where: eq(userProfiles.userId, userId),
+  })
+  if (!profile) return false
+  if (isAnonymizedProfile(profile)) return false
+
+  await db.delete(userIdentities).where(eq(userIdentities.userId, userId))
+  await db
+    .update(userProfiles)
+    .set({
+      email: anonymizedEmailFor(userId),
+      displayName: '匿名化済み',
+      updatedAt: now.toISOString(),
+    })
+    .where(eq(userProfiles.userId, userId))
   return true
 }
 
@@ -55,6 +87,16 @@ export class PurgeWithdrawnPiiUseCase {
   }
 }
 
+function assertBannedOrWithdrawn(status: string, action: string): void {
+  if (status !== 'withdrawn' && status !== 'banned') {
+    throw new AppError(
+      'invalid_status',
+      `PII ${action} is only allowed for banned or withdrawn users`,
+      400,
+    )
+  }
+}
+
 /** 管理画面からの強制実行。banned / withdrawn のみ、猶予を見ない。 */
 export class ForcePurgeUserPiiUseCase {
   constructor(
@@ -66,20 +108,34 @@ export class ForcePurgeUserPiiUseCase {
     const user = await this.users.findById(input.userId)
     if (!user) throw new AppError('not_found', 'User not found', 404)
 
-    const status = user.getStatus().raw
-    if (status !== 'withdrawn' && status !== 'banned') {
-      throw new AppError(
-        'invalid_status',
-        'PII purge is only allowed for banned or withdrawn users',
-        400,
-      )
-    }
+    assertBannedOrWithdrawn(user.getStatus().raw, 'purge')
 
     const purged = await purgeUserPii(this.db, input.userId)
     if (!purged) {
       throw new AppError('already_purged', 'PII already deleted', 400)
     }
     return { purged: true }
+  }
+}
+
+/** 管理画面からの強制匿名化。banned / withdrawn のみ。行は保持してマスク。 */
+export class ForceAnonymizeUserPiiUseCase {
+  constructor(
+    private readonly db: Db,
+    private readonly users: UserRepository,
+  ) {}
+
+  async execute(input: { userId: string }): Promise<{ anonymized: true }> {
+    const user = await this.users.findById(input.userId)
+    if (!user) throw new AppError('not_found', 'User not found', 404)
+
+    assertBannedOrWithdrawn(user.getStatus().raw, 'anonymize')
+
+    const anonymized = await anonymizeUserPii(this.db, input.userId)
+    if (!anonymized) {
+      throw new AppError('already_anonymized', 'PII already anonymized or deleted', 400)
+    }
+    return { anonymized: true }
   }
 }
 
