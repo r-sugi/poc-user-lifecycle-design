@@ -47,6 +47,7 @@ import { SignupUseCase } from './usecases/signup/SignupUseCase'
 import { VerifySignupUseCase } from './usecases/signup/VerifySignupUseCase'
 import { DevLoginAsAdminUseCase } from './usecases/dev/DevLoginAsAdminUseCase'
 import { DevLoginAsUseCase } from './usecases/dev/DevLoginAsUseCase'
+import { ForcePurgeUserPiiUseCase } from './usecases/batch/BatchUseCases'
 import { CancelWithdrawUseCase, WithdrawUseCase } from './usecases/withdraw/WithdrawUseCases'
 
 export type AppBindings = {
@@ -187,6 +188,7 @@ export function createContainer(c: Context<AppBindings>) {
     ),
     banUser: new BanUserUseCase(statusTransitions),
     unbanUser: new UnbanUserUseCase(statusTransitions),
+    forcePurgeUserPii: new ForcePurgeUserPiiUseCase(db, userRepo),
     listVerificationHome: new ListVerificationHomeUseCase(
       userRepo,
       profileRepo,

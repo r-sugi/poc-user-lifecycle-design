@@ -328,6 +328,9 @@ export async function adminUserDetailPage(c: Context<AppBindings>) {
     } else if (action === 'cancelWithdraw') {
       await container.cancelWithdraw.execute({ userId: id })
       setFlash(c, '退会を取り消しました')
+    } else if (action === 'purgePii') {
+      await container.forcePurgeUserPii.execute({ userId: id })
+      setFlash(c, 'PII を削除しました')
     }
     return c.redirect(`/admin/users/${id}`)
   }
@@ -567,6 +570,19 @@ export async function adminUserDetailPage(c: Context<AppBindings>) {
                   </button>
                 </form>
               ) : null}
+              {(detail.user.status === 'banned' || detail.user.status === 'withdrawn') &&
+              detail.profile ? (
+                <form method="post" id="admin-purge-pii-form">
+                  <input type="hidden" name="action" value="purgePii" />
+                  <button
+                    class={btnDanger}
+                    type="button"
+                    onclick="document.getElementById('admin-purge-pii-confirm').showModal()"
+                  >
+                    PII削除
+                  </button>
+                </form>
+              ) : null}
             </div>
             <dialog
               id="admin-unban-confirm"
@@ -581,6 +597,24 @@ export async function adminUserDetailPage(c: Context<AppBindings>) {
                 </form>
                 <button type="submit" form="admin-unban-form" class={btnSecondary}>
                   解除する
+                </button>
+              </div>
+            </dialog>
+            <dialog
+              id="admin-purge-pii-confirm"
+              class="m-auto max-w-sm rounded-lg border border-neutral-200 bg-white p-4 shadow-lg backdrop:bg-black/40"
+            >
+              <p class="text-sm text-neutral-800">
+                メール・表示名・認証手段を物理削除します。この操作は取り消せません。よろしいですか？
+              </p>
+              <div class="mt-4 flex justify-end gap-2">
+                <form method="dialog">
+                  <button type="submit" class={btnSecondary}>
+                    キャンセル
+                  </button>
+                </form>
+                <button type="submit" form="admin-purge-pii-form" class={btnDanger}>
+                  PII削除する
                 </button>
               </div>
             </dialog>

@@ -10,6 +10,20 @@ import {
   userStatusEvents,
   users,
 } from '../../db/schema'
+import { AppError } from '../../lib/errors'
+import type { UserRepository } from '../../repositories/UserRepository'
+
+/** profiles / identities を物理削除。既に無ければ false。 */
+export async function purgeUserPii(db: Db, userId: string): Promise<boolean> {
+  const profile = await db.query.userProfiles.findFirst({
+    where: eq(userProfiles.userId, userId),
+  })
+  if (!profile) return false
+
+  await db.delete(userIdentities).where(eq(userIdentities.userId, userId))
+  await db.delete(userProfiles).where(eq(userProfiles.userId, userId))
+  return true
+}
 
 export class PurgeWithdrawnPiiUseCase {
   constructor(private readonly db: Db) {}
@@ -32,17 +46,40 @@ export class PurgeWithdrawnPiiUseCase {
       if (!latest) continue
       if (latest.createdAt > cutoff) continue
 
-      const profile = await this.db.query.userProfiles.findFirst({
-        where: eq(userProfiles.userId, u.id),
-      })
-      if (!profile) continue // 既にパージ済み
-
-      await this.db.delete(userIdentities).where(eq(userIdentities.userId, u.id))
-      await this.db.delete(userProfiles).where(eq(userProfiles.userId, u.id))
-      purgedUserIds.push(u.id)
+      if (await purgeUserPii(this.db, u.id)) {
+        purgedUserIds.push(u.id)
+      }
     }
 
     return { purgedUserIds }
+  }
+}
+
+/** 管理画面からの強制実行。banned / withdrawn のみ、猶予を見ない。 */
+export class ForcePurgeUserPiiUseCase {
+  constructor(
+    private readonly db: Db,
+    private readonly users: UserRepository,
+  ) {}
+
+  async execute(input: { userId: string }): Promise<{ purged: true }> {
+    const user = await this.users.findById(input.userId)
+    if (!user) throw new AppError('not_found', 'User not found', 404)
+
+    const status = user.getStatus().raw
+    if (status !== 'withdrawn' && status !== 'banned') {
+      throw new AppError(
+        'invalid_status',
+        'PII purge is only allowed for banned or withdrawn users',
+        400,
+      )
+    }
+
+    const purged = await purgeUserPii(this.db, input.userId)
+    if (!purged) {
+      throw new AppError('already_purged', 'PII already deleted', 400)
+    }
+    return { purged: true }
   }
 }
 
