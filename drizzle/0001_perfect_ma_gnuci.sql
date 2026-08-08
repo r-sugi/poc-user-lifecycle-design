@@ -1,0 +1,1 @@
+ALTER TABLE `seed_signup_labels` ADD `raw_token` text;

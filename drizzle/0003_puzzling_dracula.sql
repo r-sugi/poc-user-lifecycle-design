@@ -1,0 +1,1 @@
+ALTER TABLE `password_resets` ADD `raw_token` text;

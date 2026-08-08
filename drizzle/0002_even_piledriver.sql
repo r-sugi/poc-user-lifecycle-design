@@ -1,0 +1,1 @@
+ALTER TABLE `seed_signup_labels` ADD `display_name` text;

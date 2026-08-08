@@ -1,0 +1,1 @@
+export { requireUserPage } from './requireUser'

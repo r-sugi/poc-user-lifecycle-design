@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "poc-user-lifecycle-design",
+  "compatibility_date": "2025-08-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./src/index.tsx",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "poc-user-lifecycle",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS_KV",
+      "id": "00000000-0000-0000-0000-000000000002"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "SESSION_REVOCATIONS",
+        "queue": "session-revocations"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "session-revocations",
+        "max_batch_size": 10,
+        "max_retries": 3,
+        "dead_letter_queue": "session-revocations-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  }
+}

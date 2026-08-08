@@ -1,0 +1,7 @@
+APP_BASE_URL=http://localhost:5173
+APP_ENV=local
+ADMIN_BOOTSTRAP_EMAIL=admin1@example.com
+ADMIN_BOOTSTRAP_PASSWORD=AdminPass123!
+SEED_USER_PASSWORD=Password123!
+SEED_ADMIN_PASSWORD=AdminPass123!
+INTERNAL_BATCH_SECRET=local-batch-secret-change-me
