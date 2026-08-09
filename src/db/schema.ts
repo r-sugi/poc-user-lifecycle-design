@@ -60,6 +60,8 @@ export const signupVerifications = sqliteTable(
     id: text('id').primaryKey(),
     email: text('email').notNull(),
     passwordHash: text('password_hash').notNull(),
+    /** signup 完了時にプロフィールへ引き継ぐ表示名。アプリが必要とするデータのためシード専用テーブルではなく本体に持つ */
+    displayName: text('display_name').notNull(),
     tokenHash: text('token_hash').notNull(),
     expiresAt: text('expires_at').notNull(),
     consumedAt: text('consumed_at'),
@@ -217,6 +219,11 @@ export const seedUserLabels = sqliteTable('seed_user_labels', {
   createdAt: text('created_at').notNull(),
 })
 
+/**
+ * POC 検証トップ専用。displayName 等のアプリ必須データは持たず、
+ * 「初期状態」表示用ラベルと検証トップの認証リンク用 raw_token のみを保持する
+ * （displayName は signup_verifications 本体へ移動済み。§5.3 のシード固定ラベル分類と一致させるため）。
+ */
 export const seedSignupLabels = sqliteTable('seed_signup_labels', {
   signupVerificationId: text('signup_verification_id')
     .primaryKey()
@@ -224,7 +231,5 @@ export const seedSignupLabels = sqliteTable('seed_signup_labels', {
   initialStateLabel: text('initial_state_label').notNull(),
   /** POC 検証トップ用。シード時の生トークン（本番想定外） */
   rawToken: text('raw_token'),
-  /** POC: 申込時 displayName（検証トップ表示・verify 時プロフィール初期値） */
-  displayName: text('display_name'),
   createdAt: text('created_at').notNull(),
 })

@@ -73,7 +73,9 @@ export class PurgeWithdrawnPiiUseCase {
     const graceMs = TTL.withdrawGraceDays * 24 * 60 * 60 * 1000
     const cutoff = new Date(now.getTime() - graceMs).toISOString()
 
-    // 最新 withdrawn event が cutoff 以前のユーザー（users 起点 JOIN）
+    // 最新 withdrawn event が cutoff 以前のユーザー（users 起点 JOIN）。
+    // user_profiles への INNER JOIN で「既に purge 済み（profile 無し）」のユーザーを候補から除外する。
+    // これが無いと purge 済みユーザーが LIMIT を埋め続け、51 人目以降の対象に永久に到達できなくなる。
     const candidates = await this.db
       .select({
         userId: users.id,
@@ -83,6 +85,7 @@ export class PurgeWithdrawnPiiUseCase {
         userStatusEvents,
         and(eq(userStatusEvents.userId, users.id), eq(userStatusEvents.type, 'withdrawn')),
       )
+      .innerJoin(userProfiles, eq(userProfiles.userId, users.id))
       .where(
         and(
           eq(users.status, 'withdrawn'),
@@ -195,6 +198,11 @@ export class PurgeExpiredTokensUseCase {
 
     // seed_signup_labels は通常サインアップでも書かれる（名前は seed_* だが FK で紐づく）。
     // signup_verifications を先に消すと FK 違反になるため、同一 batch でラベル → verification の順に削除する。
+    //
+    // 注意: staleSignupIds は件数無制限に集めている。D1 は 1 クエリあたりのバインドパラメータが
+    // 100 個までのため、期限切れ/消費済みが 100 件を超えるタイミングで下の inArray DELETE が失敗しうる。
+    // ローカル検証の件数では表面化しない想定だが、本番投入前は PurgeWithdrawnPii の
+    // PURGE_BATCH_LIMIT と同様に SELECT に .limit() を付けて cron で回数を稼ぐ形に揃えること。
     const staleSignupIds = (
       await this.db
         .select({ id: signupVerifications.id })

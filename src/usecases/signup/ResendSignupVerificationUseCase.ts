@@ -24,8 +24,7 @@ export class ResendSignupVerificationUseCase {
 
     const now = new Date()
     const createdAt = now.toISOString()
-    const latestLabel = await this.seedSignupLabels.findBySignupId(latest.id)
-    const displayName = latestLabel?.displayName || email.split('@')[0] || 'User'
+    const displayName = latest.displayName || email.split('@')[0] || 'User'
     await this.signups.consumeActiveByEmail(email, createdAt)
     const token = await this.tokens.issue()
     const id = newId('signup')
@@ -33,17 +32,17 @@ export class ResendSignupVerificationUseCase {
       id,
       email,
       passwordHash: latest.passwordHash,
+      displayName,
       tokenHash: token.hashHex,
       expiresAt: hoursFromNow(TTL.signupVerificationHours, now),
       consumedAt: null,
       createdAt,
     })
-    // POC: 検証トップ用に raw token / displayName を保管（displayName は直前行から引き継ぎ）
+    // POC: 検証トップ用に raw token を保管（displayName は直前行から signup_verifications 経由で引き継ぎ）
     await this.seedSignupLabels.insert({
       signupVerificationId: id,
       initialStateLabel: 'メール確認待ち（再送後・有効）',
       rawToken: token.raw,
-      displayName,
       createdAt,
     })
     const actionUrl = `${this.mailer.getBaseUrl()}/auth/signup/verify?token=${token.raw}`

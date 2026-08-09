@@ -6,6 +6,7 @@ export type SignupVerificationRow = {
   id: string
   email: string
   passwordHash: string
+  displayName: string
   tokenHash: string
   expiresAt: string
   consumedAt: string | null

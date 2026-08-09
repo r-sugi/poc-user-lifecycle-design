@@ -199,7 +199,7 @@ export class ListVerificationHomeUseCase {
       })
       const labelRow = labelsBySignupId.get(row.id)
       const initial = labelRow?.initialStateLabel ?? current.toString()
-      const displayName = labelRow?.displayName || row.email.split('@')[0] || 'User'
+      const displayName = row.displayName || row.email.split('@')[0] || 'User'
       const action = this.buildSignupAction({
         email: row.email,
         expiresAt: row.expiresAt,

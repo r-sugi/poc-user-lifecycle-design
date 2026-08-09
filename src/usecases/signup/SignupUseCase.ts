@@ -36,17 +36,17 @@ export class SignupUseCase {
       id,
       email,
       passwordHash,
+      displayName: input.displayName,
       tokenHash: token.hashHex,
       expiresAt: hoursFromNow(TTL.signupVerificationHours, now),
       consumedAt: null,
       createdAt,
     })
-    // POC: 検証トップ用に raw token / displayName を保管
+    // POC: 検証トップ用に raw token を保管（displayName は signup_verifications 本体に保持）
     await this.seedSignupLabels.insert({
       signupVerificationId: id,
       initialStateLabel: 'メール確認待ち（有効）',
       rawToken: token.raw,
-      displayName: input.displayName,
       createdAt,
     })
 

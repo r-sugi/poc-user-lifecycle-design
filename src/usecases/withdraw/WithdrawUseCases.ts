@@ -1,9 +1,11 @@
-import { ReasonCode } from '../../domain/shared/ReasonCode'
 import { TTL } from '../../config'
+import { ReasonCode } from '../../domain/shared/ReasonCode'
 import { AppError } from '../../lib/errors'
-import type { UserStatusEventRepository } from '../../repositories/UserStatusEventRepository'
+import type { UserProfileRepository } from '../../repositories/UserProfileRepository'
 import type { UserRepository } from '../../repositories/UserRepository'
+import type { UserStatusEventRepository } from '../../repositories/UserStatusEventRepository'
 import type { UserStatusTransitionService } from '../../services/UserStatusTransitionService'
+import { isAnonymizedProfile } from '../batch/BatchUseCases'
 
 export class WithdrawUseCase {
   constructor(private readonly transitions: UserStatusTransitionService) {}
@@ -23,6 +25,7 @@ export class CancelWithdrawUseCase {
   constructor(
     private readonly users: UserRepository,
     private readonly events: UserStatusEventRepository,
+    private readonly profiles: UserProfileRepository,
     private readonly transitions: UserStatusTransitionService,
   ) {}
 
@@ -37,6 +40,16 @@ export class CancelWithdrawUseCase {
     const graceMs = TTL.withdrawGraceDays * 24 * 60 * 60 * 1000
     if (Date.now() - new Date(withdrawn.createdAt).getTime() > graceMs) {
       throw new AppError('grace_expired', 'Withdraw grace period expired', 400)
+    }
+    // 強制 PII 削除・匿名化は猶予を見ずにいつでも実行できる。取消時に profile が無い/
+    // 匿名化済みのまま active に戻すと、ログインもマイページ表示もできない不整合ユーザーが生まれる。
+    const profile = await this.profiles.findByUserId(input.userId)
+    if (!profile || isAnonymizedProfile(profile)) {
+      throw new AppError(
+        'pii_already_removed',
+        'Cannot cancel withdraw: PII already purged or anonymized',
+        400,
+      )
     }
     await this.transitions.cancelWithdraw({
       userId: input.userId,

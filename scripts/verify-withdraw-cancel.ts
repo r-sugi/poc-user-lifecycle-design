@@ -29,7 +29,7 @@ async function main() {
   const hashing = new PasswordHashingService()
   const transitions = new UserStatusTransitionService(userRepo, noopQueue)
   const withdraw = new WithdrawUseCase(transitions)
-  const cancel = new CancelWithdrawUseCase(userRepo, eventRepo, transitions)
+  const cancel = new CancelWithdrawUseCase(userRepo, eventRepo, profileRepo, transitions)
   const login = new LoginUseCase(userRepo, profileRepo, identityRepo, hashing, noopSessions)
 
   const userId = 'seed-user-01'

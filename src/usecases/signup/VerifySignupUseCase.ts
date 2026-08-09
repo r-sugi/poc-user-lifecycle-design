@@ -12,7 +12,6 @@ import { ActorType, StatusEventType } from '../../domain/shared/StatusEventEnums
 import { isUniqueViolation } from '../../lib/dbErrors'
 import { AppError } from '../../lib/errors'
 import { newId } from '../../lib/ids'
-import type { SeedSignupLabelRepository } from '../../repositories/SeedLabelRepositories'
 import type { SignupVerificationRepository } from '../../repositories/SignupVerificationRepository'
 import type { UserProfileRepository } from '../../repositories/UserProfileRepository'
 import type { SessionService } from '../../services/SessionService'
@@ -25,7 +24,6 @@ export class VerifySignupUseCase {
     private readonly profiles: UserProfileRepository,
     private readonly tokens: TokenIssuingService,
     private readonly sessions: SessionService,
-    private readonly seedSignupLabels: SeedSignupLabelRepository,
   ) {}
 
   async execute(input: { token: string; userAgent?: string; ipAddress?: string }, c?: Context) {
@@ -42,8 +40,7 @@ export class VerifySignupUseCase {
 
     const now = new Date().toISOString()
     const userId = newId('user')
-    const label = await this.seedSignupLabels.findBySignupId(row.id)
-    const displayName = label?.displayName || row.email.split('@')[0] || 'User'
+    const displayName = row.displayName || row.email.split('@')[0] || 'User'
 
     try {
       await this.db.batch([

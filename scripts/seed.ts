@@ -414,6 +414,7 @@ async function main() {
       id: s.id,
       email: s.email,
       passwordHash: userHash,
+      displayName: s.email.split('@')[0] || 'User',
       tokenHash: await sha256Hex(s.tokenRaw),
       expiresAt: s.expiresAt,
       consumedAt: s.consumedAt,
@@ -423,7 +424,6 @@ async function main() {
       signupVerificationId: s.id,
       initialStateLabel: s.label,
       rawToken: s.tokenRaw,
-      displayName: s.email.split('@')[0] || 'User',
       createdAt: base.toISOString(),
     })
   }

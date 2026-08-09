@@ -25,7 +25,6 @@ export class SeedUserLabelRepository {
 export type SeedSignupLabelRow = {
   initialStateLabel: string
   rawToken: string | null
-  displayName: string | null
 }
 
 export class SeedSignupLabelRepository {
@@ -39,7 +38,6 @@ export class SeedSignupLabelRepository {
     return {
       initialStateLabel: row.initialStateLabel,
       rawToken: row.rawToken ?? null,
-      displayName: row.displayName ?? null,
     }
   }
 
@@ -51,7 +49,6 @@ export class SeedSignupLabelRepository {
       signupVerificationId: row.signupVerificationId,
       initialStateLabel: row.initialStateLabel,
       rawToken: row.rawToken ?? null,
-      displayName: row.displayName ?? null,
     }))
   }
 
@@ -59,14 +56,12 @@ export class SeedSignupLabelRepository {
     signupVerificationId: string
     initialStateLabel: string
     rawToken?: string | null
-    displayName?: string | null
     createdAt: string
   }): Promise<void> {
     await this.db.insert(seedSignupLabels).values({
       signupVerificationId: params.signupVerificationId,
       initialStateLabel: params.initialStateLabel,
       rawToken: params.rawToken ?? null,
-      displayName: params.displayName ?? null,
       createdAt: params.createdAt,
     })
   }
