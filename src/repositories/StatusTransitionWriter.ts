@@ -114,19 +114,46 @@ export class StatusTransitionWriter {
     const first = statements[0]
     if (!first) throw new AppError('internal_error', 'Empty status transition batch', 500)
 
-    const results = await this.db.batch([first, ...statements.slice(1)])
-    const updateResult = results[results.length - 1] as { id: string }[]
-    if (!Array.isArray(updateResult) || updateResult.length === 0) {
-      const current = await this.db.query.users.findFirst({ where: eq(users.id, params.userId) })
-      if (current?.lastSeq === params.nextSeq && current.status === params.nextStatus) {
-        return
+    try {
+      const results = await this.db.batch([first, ...statements.slice(1)])
+      const updateResult = results[results.length - 1] as { id: string }[]
+      if (!Array.isArray(updateResult) || updateResult.length === 0) {
+        await this.assertSettledOrConflict(params)
       }
-      throw new AppError(
-        'optimistic_lock_conflict',
-        'Status update conflict (event written, cache stale)',
-        409,
-      )
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e
+      // 並行リトライで詳細 INSERT が先勝ち UNIQUE。完了済みなら成功、未更新なら UPDATE のみ。
+      if (await this.isSettled(params)) return
+      await this.updateUserCache(params)
     }
+  }
+
+  private async isSettled(params: StatusTransitionParams): Promise<boolean> {
+    const current = await this.db.query.users.findFirst({ where: eq(users.id, params.userId) })
+    return current?.lastSeq === params.nextSeq && current.status === params.nextStatus
+  }
+
+  private async assertSettledOrConflict(params: StatusTransitionParams): Promise<void> {
+    if (await this.isSettled(params)) return
+    throw new AppError(
+      'optimistic_lock_conflict',
+      'Status update conflict (event written, cache stale)',
+      409,
+    )
+  }
+
+  private async updateUserCache(params: StatusTransitionParams): Promise<void> {
+    const updated = await this.db
+      .update(users)
+      .set({
+        status: params.nextStatus,
+        lastSeq: params.nextSeq,
+        updatedAt: params.updatedAt,
+      })
+      .where(and(eq(users.id, params.userId), eq(users.lastSeq, params.expectedSeq)))
+      .returning({ id: users.id })
+    if (updated.length > 0) return
+    await this.assertSettledOrConflict(params)
   }
 
   /** @returns done = 既に完了 / continue = batch へ進む */
