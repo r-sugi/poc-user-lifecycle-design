@@ -56,7 +56,7 @@
 
 - [x] 4.1 Repository 一式を実装する（User / Profile / Identity / SignupVerification / PasswordReset / EmailChangeRequest / AdminUser / StatusEvent / Withdrawal / Ban / **SeedUserLabel / SeedSignupLabel**）
 - [x] 4.2 Repository 内に「単発楽観ロック UPDATE → 影響行数確認 → `db.batch`」の状態遷移書き込みヘルパを閉じ込める
-- [x] 4.3 `PasswordHashingService`（PBKDF2-SHA256, 100k, `pbkdf2$iter$salt$hash`）を実装する
+- [x] 4.3 `PasswordHashingService`（PBKDF2-SHA256, 600k, `pbkdf2$iter$salt$hash`）を実装する
 - [x] 4.4 `TokenIssuingService`（32byte / SHA-256）を実装する
 - [x] 4.5 `MailerGateway`（構造化 JSON の console.log、actionUrl 付き）を実装する
 - [x] 4.6 `GoogleAuthMockGateway`（code 埋め込み・復号）を実装する

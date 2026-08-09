@@ -22,6 +22,6 @@ npm run dev                  # http://localhost:5173
 
 ### 再シード時の注意
 
-- PBKDF2 反復回数は **600,000**。古いシード（100,000 回）の hash のままだとログインに失敗する。マイグレーション後は必ず `npm run seed` を再実行する。
+- PBKDF2 反復回数は **600,000**（新規 hash 時）。保存済み hash は文字列中の反復回数で照合するため、旧 100,000 回の hash でもログイン自体は可能。マイグレーション後はシード整合（A5 の `disabled_at` 等）のため `npm run seed` の再実行を推奨。
 - 退会取消は**管理者のみ**（`POST /admin/users/:id/cancel-withdraw`）。`withdrawn` ユーザーはログイン不可。
 - A5（`admin5@example.com`）は `disabled_at` 付きでシードされ、ログインできない。
