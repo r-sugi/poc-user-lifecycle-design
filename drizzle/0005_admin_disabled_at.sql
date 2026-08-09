@@ -1,0 +1,1 @@
+ALTER TABLE `admin_users` ADD `disabled_at` text;

@@ -19,3 +19,9 @@ npm run dev                  # http://localhost:5173
 - 共通パスワード: ユーザー `Password123!` / 管理者 `AdminPass123!`
 - DB `DB` / セッション KV `SESSIONS_KV` / Queue `SESSION_REVOCATIONS`（DLQ あり）
 - メールは console.log のみ、Google はモック
+
+### 再シード時の注意
+
+- PBKDF2 反復回数は **600,000**。古いシード（100,000 回）の hash のままだとログインに失敗する。マイグレーション後は必ず `npm run seed` を再実行する。
+- 退会取消は**管理者のみ**（`POST /admin/users/:id/cancel-withdraw`）。`withdrawn` ユーザーはログイン不可。
+- A5（`admin5@example.com`）は `disabled_at` 付きでシードされ、ログインできない。

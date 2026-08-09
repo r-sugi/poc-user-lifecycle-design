@@ -67,6 +67,11 @@ adminApi.post('/users/:id/unban', requireAdmin, async (c) => {
   )
 })
 
+adminApi.post('/users/:id/cancel-withdraw', requireAdmin, async (c) => {
+  const { cancelWithdraw } = createContainer(c)
+  return c.json(await cancelWithdraw.execute({ userId: c.req.param('id') }))
+})
+
 adminApi.post('/users/:id/purge-pii', requireAdmin, async (c) => {
   const { forcePurgeUserPii } = createContainer(c)
   return c.json(await forcePurgeUserPii.execute({ userId: c.req.param('id') }))

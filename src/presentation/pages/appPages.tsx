@@ -575,7 +575,7 @@ export async function adminUserDetailPage(c: Context<AppBindings>) {
                 <form method="post">
                   <input type="hidden" name="action" value="cancelWithdraw" />
                   <button class={btnSecondary} type="submit">
-                    退会取消
+                    退会取消（管理者）
                   </button>
                 </form>
               ) : null}

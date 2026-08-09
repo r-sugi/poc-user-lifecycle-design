@@ -12,6 +12,11 @@ export class SeedUserLabelRepository {
     return row?.initialStateLabel ?? null
   }
 
+  async listAll(): Promise<Array<{ userId: string; initialStateLabel: string }>> {
+    const rows = await this.db.select().from(seedUserLabels)
+    return rows.map((r) => ({ userId: r.userId, initialStateLabel: r.initialStateLabel }))
+  }
+
   async insert(userId: string, initialStateLabel: string, createdAt: string): Promise<void> {
     await this.db.insert(seedUserLabels).values({ userId, initialStateLabel, createdAt })
   }
@@ -36,6 +41,18 @@ export class SeedSignupLabelRepository {
       rawToken: row.rawToken ?? null,
       displayName: row.displayName ?? null,
     }
+  }
+
+  async listAll(): Promise<
+    Array<SeedSignupLabelRow & { signupVerificationId: string }>
+  > {
+    const rows = await this.db.select().from(seedSignupLabels)
+    return rows.map((row) => ({
+      signupVerificationId: row.signupVerificationId,
+      initialStateLabel: row.initialStateLabel,
+      rawToken: row.rawToken ?? null,
+      displayName: row.displayName ?? null,
+    }))
   }
 
   async insert(params: {

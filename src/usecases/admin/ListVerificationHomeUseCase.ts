@@ -48,6 +48,9 @@ export type HomeSignupRow = {
   action: SignupAction
 }
 
+/**
+ * 検証トップ一覧。N+1 を避けるため関連を一括ロードしてメモリ合成する（設計書）。
+ */
 export class ListVerificationHomeUseCase {
   constructor(
     private readonly users: UserRepository,
@@ -64,45 +67,90 @@ export class ListVerificationHomeUseCase {
   ) {}
 
   async execute(): Promise<{ confirmed: HomeConfirmedRow[]; signups: HomeSignupRow[] }> {
-    const allUsers = await this.users.listAll()
-    const confirmed: HomeConfirmedRow[] = []
+    const [
+      allUsers,
+      allProfiles,
+      allIdentities,
+      allEvents,
+      allBans,
+      allEmailChanges,
+      allPasswordResets,
+      allUserLabels,
+    ] = await Promise.all([
+      this.users.listAll(),
+      this.profiles.listAll(),
+      this.identities.listAll(),
+      this.events.listAll(),
+      this.bans.listAllWithEvents(),
+      this.emailChanges.listAll(),
+      this.passwordResets.listAll(),
+      this.seedUserLabels.listAll(),
+    ])
 
+    const profilesByUser = new Map(allProfiles.map((p) => [p.userId, p]))
+    const identitiesByUser = groupBy(allIdentities, (i) => i.userId)
+    const eventsByUser = groupBy(allEvents, (e) => e.userId)
+    const userLabels = new Map(allUserLabels.map((l) => [l.userId, l.initialStateLabel]))
+
+    const latestBanReasonByUser = new Map<string, string>()
+    const bansSorted = [...allBans].sort((a, b) => b.seq - a.seq)
+    for (const ban of bansSorted) {
+      if (!latestBanReasonByUser.has(ban.userId)) {
+        latestBanReasonByUser.set(ban.userId, ban.reasonCode)
+      }
+    }
+
+    const now = Date.now()
+    const pendingEmailByUser = new Set<string>()
+    for (const row of allEmailChanges) {
+      if (!row.consumedAt && new Date(row.expiresAt).getTime() > now) {
+        pendingEmailByUser.add(row.userId)
+      }
+    }
+
+    const pendingResetByUser = new Map<string, string | null>()
+    const resetsByUser = groupBy(allPasswordResets, (r) => r.userId)
+    for (const [userId, rows] of resetsByUser) {
+      const valid = rows
+        .filter((r) => !r.consumedAt && new Date(r.expiresAt).getTime() > now)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      if (valid.length > 0) {
+        pendingResetByUser.set(userId, valid[0]?.rawToken ?? null)
+      }
+    }
+
+    const confirmed: HomeConfirmedRow[] = []
     for (const user of allUsers) {
       const userId = user.id.toString()
-      const profile = await this.profiles.findByUserId(userId)
+      const profile = profilesByUser.get(userId)
       if (!profile) continue
-      const identities = await this.identities.listByUserId(userId)
+      const identities = identitiesByUser.get(userId) ?? []
       const providers = identities
         .map((i) => i.provider)
         .filter((p): p is 'password' | 'google' => p === 'password' || p === 'google')
-      const events = await this.events.listByUserId(userId)
+      const events = eventsByUser.get(userId) ?? []
       const status = user.getStatus().raw as UserStatusValue
-      let banReasonCode: string | null = null
-      if (status === 'banned') {
-        const ban = await this.bans.findLatestForUser(userId)
-        banReasonCode = ban?.ban.reasonCode ?? null
-      }
+      const banReasonCode = status === 'banned' ? (latestBanReasonByUser.get(userId) ?? null) : null
       let withdrawnAt: string | null = null
       if (status === 'withdrawn') {
         const w = events.filter((e) => e.type === 'withdrawn').at(-1)
         withdrawnAt = w?.createdAt ?? null
       }
-      const hasPendingPasswordReset = await this.passwordResets.hasPending(userId)
+      const hasPendingPasswordReset = pendingResetByUser.has(userId)
       const pendingPasswordResetToken =
         providers.includes('password') && hasPendingPasswordReset
-          ? await this.passwordResets.findLatestPendingRawToken(userId)
+          ? (pendingResetByUser.get(userId) ?? null)
           : null
       const current = this.resolver.resolveForConfirmedUser({
         status,
         providers,
-        hasPendingEmailChange: await this.emailChanges.hasPending(userId),
+        hasPendingEmailChange: pendingEmailByUser.has(userId),
         hasPendingPasswordReset,
         events: events.map((e) => ({ type: e.type, createdAt: e.createdAt })),
         banReasonCode,
         withdrawnAt,
       })
-      const initial =
-        (await this.seedUserLabels.findByUserId(userId)) ?? current.toString()
+      const initial = userLabels.get(userId) ?? current.toString()
       confirmed.push({
         userId,
         email: profile.email,
@@ -123,14 +171,12 @@ export class ListVerificationHomeUseCase {
     confirmed.sort((a, b) => a.email.localeCompare(b.email))
 
     const signupRows = await this.signups.listAll()
-    const byEmail = new Map<string, typeof signupRows>()
-    for (const s of signupRows) {
-      const list = byEmail.get(s.email) ?? []
-      list.push(s)
-      byEmail.set(s.email, list)
-    }
+    const signupLabels = await this.seedSignupLabels.listAll()
+    const labelsBySignupId = new Map(
+      signupLabels.map((l) => [l.signupVerificationId, l] as const),
+    )
+    const byEmail = groupBy(signupRows, (s) => s.email)
 
-    const now = Date.now()
     const signups: HomeSignupRow[] = []
     for (const row of signupRows) {
       const siblings = byEmail.get(row.email) ?? []
@@ -151,7 +197,7 @@ export class ListVerificationHomeUseCase {
         hasNewerValidSibling,
         isResendCurrent,
       })
-      const labelRow = await this.seedSignupLabels.findBySignupId(row.id)
+      const labelRow = labelsBySignupId.get(row.id)
       const initial = labelRow?.initialStateLabel ?? current.toString()
       const displayName = labelRow?.displayName || row.email.split('@')[0] || 'User'
       const action = this.buildSignupAction({
@@ -204,4 +250,15 @@ export class ListVerificationHomeUseCase {
       href: `/auth/signup/verify?token=${encodeURIComponent(input.rawToken)}`,
     }
   }
+}
+
+function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+  const map = new Map<string, T[]>()
+  for (const item of items) {
+    const k = key(item)
+    const list = map.get(k)
+    if (list) list.push(item)
+    else map.set(k, [item])
+  }
+  return map
 }

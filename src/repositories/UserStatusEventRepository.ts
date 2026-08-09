@@ -22,6 +22,10 @@ export class UserStatusEventRepository {
       .orderBy(asc(userStatusEvents.seq))
   }
 
+  async listAll(): Promise<StatusEventRow[]> {
+    return this.db.select().from(userStatusEvents).orderBy(asc(userStatusEvents.userId), asc(userStatusEvents.seq))
+  }
+
   async findLatestOfType(userId: string, type: string): Promise<StatusEventRow | null> {
     const rows = await this.db
       .select()
@@ -67,6 +71,24 @@ export class UserBanRepository {
       if (ban) return { event: ev, ban }
     }
     return null
+  }
+
+  /** 全 banned 詳細。event.userId でマップ合成する前提 */
+  async listAllWithEvents() {
+    const rows = await this.db
+      .select({
+        eventId: userBans.eventId,
+        adminUserId: userBans.adminUserId,
+        reasonCode: userBans.reasonCode,
+        reasonText: userBans.reasonText,
+        createdAt: userBans.createdAt,
+        userId: userStatusEvents.userId,
+        seq: userStatusEvents.seq,
+        type: userStatusEvents.type,
+      })
+      .from(userBans)
+      .innerJoin(userStatusEvents, eq(userBans.eventId, userStatusEvents.id))
+    return rows
   }
 }
 

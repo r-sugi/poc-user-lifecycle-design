@@ -16,6 +16,7 @@ export class AdminUserRepository {
       email: row.email,
       passwordHash: row.passwordHash,
       createdAt: row.createdAt,
+      disabledAt: row.disabledAt,
     })
   }
 
@@ -29,6 +30,7 @@ export class AdminUserRepository {
       email: row.email,
       passwordHash: row.passwordHash,
       createdAt: row.createdAt,
+      disabledAt: row.disabledAt,
     })
   }
 
@@ -42,6 +44,7 @@ export class AdminUserRepository {
         email: row.email,
         passwordHash: row.passwordHash,
         createdAt: row.createdAt,
+        disabledAt: row.disabledAt,
       }),
     )
   }
@@ -51,7 +54,18 @@ export class AdminUserRepository {
     email: string
     passwordHash: string
     createdAt: string
+    disabledAt?: string | null
   }): Promise<void> {
-    await this.db.insert(adminUsers).values(params)
+    await this.db.insert(adminUsers).values({
+      id: params.id,
+      email: params.email,
+      passwordHash: params.passwordHash,
+      createdAt: params.createdAt,
+      disabledAt: params.disabledAt ?? null,
+    })
+  }
+
+  async setDisabledAt(id: string, disabledAt: string | null): Promise<void> {
+    await this.db.update(adminUsers).set({ disabledAt }).where(eq(adminUsers.id, id))
   }
 }

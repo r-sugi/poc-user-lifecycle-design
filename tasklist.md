@@ -99,9 +99,9 @@
 - [x] 6.3 `ChangePasswordUseCase`（Queue: password_change）
 - [x] 6.4 `RequestEmailChangeUseCase`
 - [x] 6.5 `WithdrawUseCase`（方針 B + Queue: withdraw）
-- [x] 6.6 `CancelWithdrawUseCase`（方針 B）
-- [x] 6.7 presentation/api の me / withdraw を mount する
-- [ ] 6.8 curl で /me・退会・取消・パスワード変更の疎通を確認する
+- [x] 6.6 `CancelWithdrawUseCase`（方針 B・**管理者専用**・猶予判定あり）
+- [x] 6.7 presentation/api の me（withdraw のみ）を mount する
+- [ ] 6.8 curl で /me・退会・パスワード変更の疎通を確認する
 
 ---
 
@@ -133,6 +133,7 @@
 - [x] 7.5 `GetUserDetailUseCase`（profile / identities / KV sessions / events+reasons）
 - [x] 7.6 `BanUserUseCase`（方針 B + Queue: ban）
 - [x] 7.7 `UnbanUserUseCase`
+- [x] 7.7a `CancelWithdrawUseCase` を `POST /admin/users/:id/cancel-withdraw` から呼ぶ
 - [x] 7.8 presentation/api/admin.ts を mount する
 - [ ] 7.9 curl で BAN → ユーザーログイン不可（ラグ考慮）→ unban → 再ログインを確認する
 - [ ] 7.10 シードユーザーで管理画面一覧・詳細（履歴・理由コード・identity 差分）を目視確認する
@@ -172,14 +173,14 @@
 - [x] 10.3 ログイン `GET/POST /login`
 - [x] 10.4 マイページ `GET /mypage`（status / profile / identities / sessions / 導線）
 - [x] 10.5 退会 `POST /mypage/withdraw`（PRG）
-- [x] 10.6 退会取消 `POST /mypage/withdraw/cancel`（PRG）
+- [x] 10.6 （削除）ユーザー向け退会取消は設けない。取消は管理画面 `POST /admin/users/:id` の cancelWithdraw / API `cancel-withdraw`
 - [x] 10.7 ログアウト `POST /logout`
 - [ ] 10.8 Google モック同意画面 + callback 後 mypage リダイレクト
 - [ ] 10.9 パスワードリセット申請 `GET/POST /password/reset-request`
 - [ ] 10.10 パスワードリセット実行 `GET/POST /password/reset`
 - [ ] 10.11 メール変更申請 `GET/POST /mypage/email-change`
 - [ ] 10.12 メール変更検証 `GET /email-change/verify`
-- [ ] 10.13 ブラウザで「サインアップ→ログURL検証→ログイン→退会→取消→再ログイン」を通す
+- [ ] 10.13 ブラウザで「サインアップ→ログURL検証→ログイン→退会」を通し、取消は管理画面で行うこと
 - [x] 10.14 検証トップ `GET /` からユーザー向け導線に入れることを確認する
 
 ---
@@ -192,7 +193,8 @@
 - [x] 11.4 ユーザー詳細 `GET /admin/users/:id`（全付随情報・履歴・セッション）
 - [x] 11.5 BAN `POST /admin/users/:id/ban`（理由入力）
 - [x] 11.6 BAN 解除 `POST /admin/users/:id/unban`
-- [ ] 11.7 ブラウザで「BAN→ユーザーログイン不可確認→解除→再ログイン」を通す（Queue ラグを考慮）
+- [x] 11.6a 退会取消 `POST /admin/users/:id/cancel-withdraw`（詳細画面フォーム含む）
+- [ ] 11.7 ブラウザで「BAN→ユーザーログイン不可確認→解除→再ログイン」および「退会→管理者取消→再ログイン」を通す（Queue ラグを考慮）
 - [x] 11.8 検証トップ `GET /` から管理者向け導線に入れること、および未認証一覧が管理者ユーザー一覧と混ざらないことを確認する
 
 ---
@@ -213,7 +215,8 @@
 - [ ] 13.2 KV / Queue のセットアップ手順を書く
 - [ ] 13.3 メールはログの `actionUrl` を使う旨を明記する
 - [ ] 13.4 ブラウザ確認シナリオを書く:
-  - ユーザー: サインアップ→検証→ログイン→退会→退会取消→再ログイン
+  - ユーザー: サインアップ→検証→ログイン→退会
+  - 管理者: 退会取消（猶予内）→ユーザー再ログイン
   - ユーザー: パスワードリセット
   - ユーザー: メールアドレス変更
   - 管理者: BAN→ログイン不可→BAN解除→再ログイン可能

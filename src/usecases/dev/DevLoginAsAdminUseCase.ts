@@ -23,6 +23,7 @@ export class DevLoginAsAdminUseCase {
     }
     const admin = await this.admins.findById(input.adminId)
     if (!admin) throw new AppError('not_found', 'Admin not found', 404)
+    if (admin.isDisabled) throw new AppError('admin_disabled', 'Admin account disabled', 403)
 
     await this.sessions.logoutAdmin(c).catch(() => undefined)
     await this.sessions.issueAdminSession(

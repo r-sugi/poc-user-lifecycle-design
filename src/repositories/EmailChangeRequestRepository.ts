@@ -35,6 +35,10 @@ export class EmailChangeRequestRepository {
     return rows.some((r) => new Date(r.expiresAt).getTime() > now)
   }
 
+  async listAll(): Promise<EmailChangeRequestRow[]> {
+    return this.db.select().from(emailChangeRequests)
+  }
+
   async markConsumed(id: string, consumedAt: string): Promise<void> {
     await this.db
       .update(emailChangeRequests)

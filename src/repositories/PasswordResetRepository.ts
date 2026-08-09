@@ -36,6 +36,10 @@ export class PasswordResetRepository {
     return rows.some((r) => new Date(r.expiresAt).getTime() > now)
   }
 
+  async listAll(): Promise<PasswordResetRow[]> {
+    return this.db.select().from(passwordResets)
+  }
+
   /** 未消費・期限内の最新行の raw_token（POC）。無ければ null */
   async findLatestPendingRawToken(userId: string): Promise<string | null> {
     const rows = await this.db

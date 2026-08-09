@@ -12,6 +12,7 @@ import {
 import { eq } from 'drizzle-orm'
 import type { SeedSignupLabelRepository } from '../../repositories/SeedLabelRepositories'
 import type { SignupVerificationRepository } from '../../repositories/SignupVerificationRepository'
+import type { UserProfileRepository } from '../../repositories/UserProfileRepository'
 import type { SessionService } from '../../services/SessionService'
 import type { TokenIssuingService } from '../../services/TokenIssuingService'
 import type { Context } from 'hono'
@@ -20,6 +21,7 @@ export class VerifySignupUseCase {
   constructor(
     private readonly db: Db,
     private readonly signups: SignupVerificationRepository,
+    private readonly profiles: UserProfileRepository,
     private readonly tokens: TokenIssuingService,
     private readonly sessions: SessionService,
     private readonly seedSignupLabels: SeedSignupLabelRepository,
@@ -37,47 +39,57 @@ export class VerifySignupUseCase {
       throw new AppError('token_expired', 'Token expired', 400)
     }
 
+    const existingProfile = await this.profiles.findByEmail(row.email)
+    if (existingProfile) throw new AppError('email_taken', 'Email already registered', 409)
+
     const now = new Date().toISOString()
     const userId = newId('user')
     const label = await this.seedSignupLabels.findBySignupId(row.id)
     const displayName = label?.displayName || row.email.split('@')[0] || 'User'
 
-    await this.db.batch([
-      this.db.insert(users).values({
-        id: userId,
-        status: 'active',
-        lastSeq: 1,
-        verifiedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      this.db.insert(userProfiles).values({
-        userId,
-        email: row.email,
-        displayName,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      this.db.insert(userIdentities).values({
-        id: newId('id'),
-        userId,
-        provider: 'password',
-        providerUid: userId,
-        passwordHash: row.passwordHash,
-        createdAt: now,
-      }),
-      this.db.insert(userStatusEvents).values({
-        userId,
-        seq: 1,
-        type: StatusEventType.Activated,
-        actorType: ActorType.User,
-        createdAt: now,
-      }),
-      this.db
-        .update(signupVerifications)
-        .set({ consumedAt: now })
-        .where(eq(signupVerifications.id, row.id)),
-    ])
+    try {
+      await this.db.batch([
+        this.db.insert(users).values({
+          id: userId,
+          status: 'active',
+          lastSeq: 1,
+          verifiedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        }),
+        this.db.insert(userProfiles).values({
+          userId,
+          email: row.email,
+          displayName,
+          createdAt: now,
+          updatedAt: now,
+        }),
+        this.db.insert(userIdentities).values({
+          id: newId('id'),
+          userId,
+          provider: 'password',
+          providerUid: userId,
+          passwordHash: row.passwordHash,
+          createdAt: now,
+        }),
+        this.db.insert(userStatusEvents).values({
+          userId,
+          seq: 1,
+          type: StatusEventType.Activated,
+          actorType: ActorType.User,
+          createdAt: now,
+        }),
+        this.db
+          .update(signupVerifications)
+          .set({ consumedAt: now })
+          .where(eq(signupVerifications.id, row.id)),
+      ])
+    } catch (e) {
+      if (isUniqueViolation(e)) {
+        throw new AppError('email_taken', 'Email already registered', 409)
+      }
+      throw e
+    }
 
     await this.sessions.issueUserSession(
       userId,
@@ -90,4 +102,10 @@ export class VerifySignupUseCase {
 
     return { userId }
   }
+}
+
+function isUniqueViolation(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const msg = 'message' in e && typeof e.message === 'string' ? e.message : String(e)
+  return /UNIQUE|unique|constraint/i.test(msg)
 }

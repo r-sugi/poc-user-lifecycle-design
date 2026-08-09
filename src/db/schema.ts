@@ -92,6 +92,8 @@ export const adminUsers = sqliteTable(
     email: text('email').notNull(),
     passwordHash: text('password_hash').notNull(),
     createdAt: text('created_at').notNull(),
+    /** 退任等でログインを止める。物理削除しない */
+    disabledAt: text('disabled_at'),
   },
   (t) => [uniqueIndex('admin_users_email_unique').on(t.email)],
 )

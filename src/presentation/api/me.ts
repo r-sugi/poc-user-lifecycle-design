@@ -38,8 +38,3 @@ meApi.post('/withdraw', async (c) => {
   const { withdraw } = createContainer(c)
   return c.json(await withdraw.execute({ userId: c.get('userId')!, ...body }))
 })
-
-meApi.post('/withdraw/cancel', async (c) => {
-  const { cancelWithdraw } = createContainer(c)
-  return c.json(await cancelWithdraw.execute({ userId: c.get('userId')! }))
-})

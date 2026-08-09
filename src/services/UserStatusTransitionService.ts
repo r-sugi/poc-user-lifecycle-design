@@ -32,7 +32,7 @@ export class UserStatusTransitionService {
       userId: params.userId,
       to: UserStatus.active(),
       eventType: StatusEventType.WithdrawCancelled,
-      actorType: ActorType.User,
+      actorType: ActorType.Admin,
       revoke: null,
     })
   }

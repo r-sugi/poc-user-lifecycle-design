@@ -28,6 +28,7 @@ export class AdminLoginUseCase {
     const email = Email.create(input.email).toString()
     const admin = await this.admins.findByEmail(email)
     if (!admin) throw new AppError('invalid_credentials', 'Invalid credentials', 401)
+    if (admin.isDisabled) throw new AppError('admin_disabled', 'Admin account disabled', 403)
     const ok = await this.hashing.verify(input.password, admin.passwordHash)
     if (!ok) throw new AppError('invalid_credentials', 'Invalid credentials', 401)
     await this.sessions.issueAdminSession(

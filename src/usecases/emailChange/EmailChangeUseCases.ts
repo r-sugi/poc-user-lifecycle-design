@@ -74,10 +74,21 @@ export class VerifyEmailChangeUseCase {
       throw new AppError('email_taken', 'Email taken', 409)
     }
     const now = new Date().toISOString()
-    await this.profiles.update(row.userId, { email: row.newEmail, updatedAt: now })
+    try {
+      await this.profiles.update(row.userId, { email: row.newEmail, updatedAt: now })
+    } catch (e) {
+      if (isUniqueViolation(e)) throw new AppError('email_taken', 'Email taken', 409)
+      throw e
+    }
     await this.requests.markConsumed(row.id, now)
     return { ok: true as const, email: row.newEmail }
   }
+}
+
+function isUniqueViolation(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const msg = 'message' in e && typeof e.message === 'string' ? e.message : String(e)
+  return /UNIQUE|unique|constraint/i.test(msg)
 }
 
 export class ChangePasswordUseCase {
@@ -90,7 +101,7 @@ export class ChangePasswordUseCase {
   async execute(input: { userId: string; currentPassword: string; newPassword: string }) {
     Password.create(input.newPassword)
     const identity = await this.identities.findPasswordIdentity(input.userId)
-    if (!identity?.passwordHash) throw new AppError('no_password_identity', 'No password', 400)
+    if (!identity?.passwordHash) throw new AppError('no_password_identity', 'No password', 409)
     const ok = await this.hashing.verify(input.currentPassword, identity.passwordHash)
     if (!ok) throw new AppError('invalid_credentials', 'Current password mismatch', 401)
     const passwordHash = await this.hashing.hash(input.newPassword)

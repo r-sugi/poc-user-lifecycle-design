@@ -121,6 +121,7 @@ export function createContainer(c: Context<AppBindings>) {
     verifySignup: new VerifySignupUseCase(
       db,
       signupRepo,
+      profileRepo,
       tokenIssuing,
       sessionService,
       seedSignupLabelRepo,
@@ -143,6 +144,7 @@ export function createContainer(c: Context<AppBindings>) {
     ),
     requestPasswordReset: new RequestPasswordResetUseCase(
       profileRepo,
+      identityRepo,
       passwordResetRepo,
       tokenIssuing,
       mailer,

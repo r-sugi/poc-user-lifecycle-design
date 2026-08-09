@@ -14,6 +14,7 @@ import type { TokenIssuingService } from '../../services/TokenIssuingService'
 export class RequestPasswordResetUseCase {
   constructor(
     private readonly profiles: UserProfileRepository,
+    private readonly identities: UserIdentityRepository,
     private readonly resets: PasswordResetRepository,
     private readonly tokens: TokenIssuingService,
     private readonly mailer: MailerGateway,
@@ -22,8 +23,11 @@ export class RequestPasswordResetUseCase {
   async execute(input: { email: string }) {
     const email = Email.create(input.email).toString()
     const profile = await this.profiles.findByEmail(email)
-    // 列挙防止: 存在しなくても ok を返す
+    // 列挙防止: 存在しなくても ok。Google のみ identity もトークン発行せず ok
     if (!profile) return { ok: true as const }
+    const passwordIdentity = await this.identities.findPasswordIdentity(profile.userId)
+    if (!passwordIdentity?.passwordHash) return { ok: true as const }
+
     const token = await this.tokens.issue()
     const now = new Date()
     await this.resets.insert({
@@ -65,7 +69,7 @@ export class ResetPasswordUseCase {
       throw new AppError('token_expired', 'Token expired', 400)
     }
     const identity = await this.identities.findPasswordIdentity(row.userId)
-    if (!identity) throw new AppError('no_password_identity', 'No password identity', 400)
+    if (!identity) throw new AppError('no_password_identity', 'No password identity', 409)
     const passwordHash = await this.hashing.hash(input.password)
     await this.identities.updatePasswordHash(identity.id, passwordHash)
     await this.resets.markConsumed(row.id, new Date().toISOString())

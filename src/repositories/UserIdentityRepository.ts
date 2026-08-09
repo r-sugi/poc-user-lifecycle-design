@@ -18,6 +18,10 @@ export class UserIdentityRepository {
     return this.db.select().from(userIdentities).where(eq(userIdentities.userId, userId))
   }
 
+  async listAll(): Promise<UserIdentityRow[]> {
+    return this.db.select().from(userIdentities)
+  }
+
   async findByProvider(provider: string, providerUid: string): Promise<UserIdentityRow | null> {
     const row = await this.db.query.userIdentities.findFirst({
       where: and(eq(userIdentities.provider, provider), eq(userIdentities.providerUid, providerUid)),

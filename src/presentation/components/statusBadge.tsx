@@ -28,7 +28,7 @@ function withdrawnPiiHint(label: string): string | null {
   if (label.includes('経過') || label.includes('バッチ対象')) {
     return '30日経過後も日付だけでは消えません。PurgeWithdrawnPii バッチ実行後に profiles / identities を物理削除します。users(withdrawn) とイベント履歴は残ります。'
   }
-  return '退会後30日未満は profiles / identities の PII は残り、削除バッチ対象外です。退会取消が可能です。'
+  return '退会後30日未満は profiles / identities の PII は残り、削除バッチ対象外です。管理者による退会取消が可能です。'
 }
 
 function InfoHintIcon(props: { hint: string }) {

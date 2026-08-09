@@ -56,6 +56,8 @@ async function main() {
       email: `admin${i}@example.com`,
       passwordHash: adminHash,
       createdAt: base.toISOString(),
+      // A5 予備を disabled にし、無効化手段を検証可能にする
+      disabledAt: i === 5 ? base.toISOString() : null,
     })
   }
 
@@ -233,7 +235,7 @@ async function main() {
       events: [
         { type: 'activated', daysAgo: 60 },
         { type: 'banned', daysAgo: 20, reasonCode: 'tos_violation', adminId: 'seed-admin-01' },
-        { type: 'unbanned', daysAgo: 10, adminId: 'seed-admin-01' },
+        { type: 'unbanned', daysAgo: 10, adminId: 'seed-admin-03' },
       ],
     },
     {
@@ -293,7 +295,10 @@ async function main() {
         userId: u.id,
         seq,
         type: ev.type,
-        actorType: ev.type === 'banned' || ev.type === 'unbanned' ? 'admin' : 'user',
+        actorType:
+          ev.type === 'banned' || ev.type === 'unbanned' || ev.type === 'withdraw_cancelled'
+            ? 'admin'
+            : 'user',
         createdAt: created,
       })
       const found = await db.query.userStatusEvents.findFirst({
