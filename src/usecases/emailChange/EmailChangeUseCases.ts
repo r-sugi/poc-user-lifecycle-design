@@ -1,18 +1,21 @@
 import { TTL } from '../../config'
 import { Email } from '../../domain/shared/Email'
 import { Password } from '../../domain/shared/Password'
-import { AppError } from '../../lib/errors'
-import { hoursFromNow, newId } from '../../lib/ids'
 import type { MailerGateway } from '../../gateways/MailerGateway'
 import type { SessionRevocationQueueGateway } from '../../gateways/SessionRevocationQueueGateway'
+import { assertUserActive } from '../../lib/assertUserActive'
+import { AppError } from '../../lib/errors'
+import { hoursFromNow, newId } from '../../lib/ids'
 import type { EmailChangeRequestRepository } from '../../repositories/EmailChangeRequestRepository'
 import type { UserIdentityRepository } from '../../repositories/UserIdentityRepository'
 import type { UserProfileRepository } from '../../repositories/UserProfileRepository'
+import type { UserRepository } from '../../repositories/UserRepository'
 import type { PasswordHashingService } from '../../services/PasswordHashingService'
 import type { TokenIssuingService } from '../../services/TokenIssuingService'
 
 export class RequestEmailChangeUseCase {
   constructor(
+    private readonly users: UserRepository,
     private readonly profiles: UserProfileRepository,
     private readonly requests: EmailChangeRequestRepository,
     private readonly tokens: TokenIssuingService,
@@ -20,6 +23,9 @@ export class RequestEmailChangeUseCase {
   ) {}
 
   async execute(input: { userId: string; newEmail: string }) {
+    const user = await this.users.findById(input.userId)
+    if (!user) throw new AppError('not_found', 'User not found', 404)
+    assertUserActive(user)
     const newEmail = Email.create(input.newEmail).toString()
     const taken = await this.profiles.findByEmail(newEmail)
     if (taken) throw new AppError('email_taken', 'Email taken', 409)
@@ -93,12 +99,16 @@ function isUniqueViolation(e: unknown): boolean {
 
 export class ChangePasswordUseCase {
   constructor(
+    private readonly users: UserRepository,
     private readonly identities: UserIdentityRepository,
     private readonly hashing: PasswordHashingService,
     private readonly queue: SessionRevocationQueueGateway,
   ) {}
 
   async execute(input: { userId: string; currentPassword: string; newPassword: string }) {
+    const user = await this.users.findById(input.userId)
+    if (!user) throw new AppError('not_found', 'User not found', 404)
+    assertUserActive(user)
     Password.create(input.newPassword)
     const identity = await this.identities.findPasswordIdentity(input.userId)
     if (!identity?.passwordHash) throw new AppError('no_password_identity', 'No password', 409)

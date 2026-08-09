@@ -1,6 +1,6 @@
-import { asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { userBans, userStatusEvents, userUnbans, userWithdrawals } from '../db/schema'
+import { userBans, userStatusEvents } from '../db/schema'
 
 export type StatusEventRow = {
   id: number
@@ -8,6 +8,7 @@ export type StatusEventRow = {
   seq: number
   type: string
   actorType: string
+  actorId: string | null
   createdAt: string
 }
 
@@ -23,83 +24,58 @@ export class UserStatusEventRepository {
   }
 
   async listAll(): Promise<StatusEventRow[]> {
-    return this.db.select().from(userStatusEvents).orderBy(asc(userStatusEvents.userId), asc(userStatusEvents.seq))
+    return this.db
+      .select()
+      .from(userStatusEvents)
+      .orderBy(asc(userStatusEvents.userId), asc(userStatusEvents.seq))
   }
 
   async findLatestOfType(userId: string, type: string): Promise<StatusEventRow | null> {
     const rows = await this.db
       .select()
       .from(userStatusEvents)
-      .where(eq(userStatusEvents.userId, userId))
+      .where(and(eq(userStatusEvents.userId, userId), eq(userStatusEvents.type, type)))
       .orderBy(desc(userStatusEvents.seq))
-    return rows.find((r) => r.type === type) ?? null
-  }
-}
-
-export class UserWithdrawalRepository {
-  constructor(private readonly db: Db) {}
-
-  async findByEventId(eventId: number) {
-    return (
-      (await this.db.query.userWithdrawals.findFirst({
-        where: eq(userWithdrawals.eventId, eventId),
-      })) ?? null
-    )
+      .limit(1)
+    return rows[0] ?? null
   }
 }
 
 export class UserBanRepository {
   constructor(private readonly db: Db) {}
 
-  async findByEventId(eventId: number) {
-    return (
-      (await this.db.query.userBans.findFirst({
-        where: eq(userBans.eventId, eventId),
-      })) ?? null
-    )
-  }
-
   async findLatestForUser(userId: string) {
-    const events = await this.db
+    const rows = await this.db
       .select()
-      .from(userStatusEvents)
-      .where(eq(userStatusEvents.userId, userId))
-      .orderBy(desc(userStatusEvents.seq))
-    for (const ev of events) {
-      if (ev.type !== 'banned') continue
-      const ban = await this.findByEventId(ev.id)
-      if (ban) return { event: ev, ban }
-    }
-    return null
+      .from(userBans)
+      .where(eq(userBans.userId, userId))
+      .orderBy(desc(userBans.seq))
+      .limit(1)
+    const ban = rows[0]
+    if (!ban) return null
+    const event = await this.db.query.userStatusEvents.findFirst({
+      where: and(eq(userStatusEvents.userId, ban.userId), eq(userStatusEvents.seq, ban.seq)),
+    })
+    if (!event) return null
+    return { event, ban }
   }
 
-  /** 全 banned 詳細。event.userId でマップ合成する前提 */
+  /** 全 banned 詳細。userId でマップ合成する前提 */
   async listAllWithEvents() {
-    const rows = await this.db
+    return this.db
       .select({
-        eventId: userBans.eventId,
-        adminUserId: userBans.adminUserId,
+        userId: userBans.userId,
+        seq: userBans.seq,
         reasonCode: userBans.reasonCode,
         reasonText: userBans.reasonText,
         createdAt: userBans.createdAt,
-        userId: userStatusEvents.userId,
-        seq: userStatusEvents.seq,
+        actorId: userStatusEvents.actorId,
         type: userStatusEvents.type,
       })
       .from(userBans)
-      .innerJoin(userStatusEvents, eq(userBans.eventId, userStatusEvents.id))
-    return rows
-  }
-}
-
-export class UserUnbanRepository {
-  constructor(private readonly db: Db) {}
-
-  async findByEventId(eventId: number) {
-    return (
-      (await this.db.query.userUnbans.findFirst({
-        where: eq(userUnbans.eventId, eventId),
-      })) ?? null
-    )
+      .innerJoin(
+        userStatusEvents,
+        and(eq(userBans.userId, userStatusEvents.userId), eq(userBans.seq, userStatusEvents.seq)),
+      )
   }
 }

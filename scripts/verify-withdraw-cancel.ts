@@ -51,18 +51,27 @@ async function main() {
   }
 
   console.log('3. admin cancel-withdraw')
-  await cancel.execute({ userId })
+  await cancel.execute({ userId, adminUserId: 'seed-admin-01' })
   const afterCancel = await userRepo.findById(userId)
   const events = await eventRepo.listByUserId(userId)
   const last = events.at(-1)
-  console.log('   status=', afterCancel?.getStatus().raw, 'last event=', last?.type, 'actor=', last?.actorType)
+  console.log(
+    '   status=',
+    afterCancel?.getStatus().raw,
+    'last event=',
+    last?.type,
+    'actor=',
+    last?.actorType,
+    'actorId=',
+    last?.actorId,
+  )
 
   console.log('4. login should succeed')
   const result = await login.execute({ email, password })
   console.log('   login ok userId=', result.userId)
 
-  if (last?.type !== 'withdraw_cancelled' || last.actorType !== 'admin') {
-    throw new Error('expected withdraw_cancelled with actor_type=admin')
+  if (last?.type !== 'withdraw_cancelled' || last.actorType !== 'admin' || last.actorId !== 'seed-admin-01') {
+    throw new Error('expected withdraw_cancelled with actor_type=admin and actor_id')
   }
   console.log('PASS')
   await proxy.dispose()

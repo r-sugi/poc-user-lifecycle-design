@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { users } from '../db/schema'
+import { userProfiles, users } from '../db/schema'
 import { User } from '../domain/user/User'
 import { AppError } from '../lib/errors'
 import { StatusTransitionWriter, type StatusTransitionParams } from './StatusTransitionWriter'
@@ -41,6 +41,31 @@ export class UserRepository {
         updatedAt: row.updatedAt,
       }),
     )
+  }
+
+  /** users 起点 LEFT JOIN profiles（PII purge 後も一覧に残す） */
+  async searchWithProfiles(emailQuery?: string) {
+    const rows = await this.db
+      .select({
+        userId: users.id,
+        status: users.status,
+        email: userProfiles.email,
+        displayName: userProfiles.displayName,
+      })
+      .from(users)
+      .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+
+    const mapped = rows.map((r) => ({
+      userId: r.userId,
+      status: r.status,
+      email: r.email ?? null,
+      displayName: r.displayName ?? null,
+      profileMissing: r.email == null,
+    }))
+
+    if (!emailQuery) return mapped
+    const q = emailQuery.toLowerCase()
+    return mapped.filter((r) => r.email?.toLowerCase().includes(q))
   }
 
   async insert(params: {

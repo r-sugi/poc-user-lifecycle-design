@@ -1,13 +1,17 @@
-import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
-export const users = sqliteTable('users', {
-  id: text('id').primaryKey(),
-  status: text('status').notNull(), // active | withdrawn | banned
-  lastSeq: integer('last_seq').notNull().default(0),
-  verifiedAt: text('verified_at').notNull(),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-})
+export const users = sqliteTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    status: text('status').notNull(), // active | withdrawn | banned
+    lastSeq: integer('last_seq').notNull().default(0),
+    verifiedAt: text('verified_at').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('users_status_idx').on(t.status)],
+)
 
 export const userProfiles = sqliteTable(
   'user_profiles',
@@ -35,7 +39,10 @@ export const userIdentities = sqliteTable(
     passwordHash: text('password_hash'),
     createdAt: text('created_at').notNull(),
   },
-  (t) => [uniqueIndex('user_identities_provider_uid_unique').on(t.provider, t.providerUid)],
+  (t) => [
+    uniqueIndex('user_identities_provider_uid_unique').on(t.provider, t.providerUid),
+    index('user_identities_user_id_idx').on(t.userId),
+  ],
 )
 
 export const signupVerifications = sqliteTable(
@@ -49,7 +56,10 @@ export const signupVerifications = sqliteTable(
     consumedAt: text('consumed_at'),
     createdAt: text('created_at').notNull(),
   },
-  (t) => [uniqueIndex('signup_verifications_token_hash_unique').on(t.tokenHash)],
+  (t) => [
+    uniqueIndex('signup_verifications_token_hash_unique').on(t.tokenHash),
+    index('signup_verifications_email_idx').on(t.email),
+  ],
 )
 
 export const passwordResets = sqliteTable(
@@ -66,7 +76,10 @@ export const passwordResets = sqliteTable(
     /** POC 検証トップ「PW更新」用。申請時の生トークン（本番想定外） */
     rawToken: text('raw_token'),
   },
-  (t) => [uniqueIndex('password_resets_token_hash_unique').on(t.tokenHash)],
+  (t) => [
+    uniqueIndex('password_resets_token_hash_unique').on(t.tokenHash),
+    index('password_resets_user_id_idx').on(t.userId),
+  ],
 )
 
 export const emailChangeRequests = sqliteTable(
@@ -82,7 +95,10 @@ export const emailChangeRequests = sqliteTable(
     consumedAt: text('consumed_at'),
     createdAt: text('created_at').notNull(),
   },
-  (t) => [uniqueIndex('email_change_requests_token_hash_unique').on(t.tokenHash)],
+  (t) => [
+    uniqueIndex('email_change_requests_token_hash_unique').on(t.tokenHash),
+    index('email_change_requests_user_id_idx').on(t.userId),
+  ],
 )
 
 export const adminUsers = sqliteTable(
@@ -108,40 +124,60 @@ export const userStatusEvents = sqliteTable(
     seq: integer('seq').notNull(),
     type: text('type').notNull(), // activated | withdrawn | withdraw_cancelled | banned | unbanned
     actorType: text('actor_type').notNull(), // user | admin | system
+    /** admin 操作時は admin_users.id。「誰が」は共通軸 */
+    actorId: text('actor_id'),
     createdAt: text('created_at').notNull(),
   },
   (t) => [uniqueIndex('user_status_events_user_seq_unique').on(t.userId, t.seq)],
 )
 
-export const userWithdrawals = sqliteTable('user_withdrawals', {
-  eventId: integer('event_id')
-    .primaryKey()
-    .references(() => userStatusEvents.id),
-  reasonCode: text('reason_code').notNull(),
-  reasonText: text('reason_text'),
-  createdAt: text('created_at').notNull(),
-})
+/** 退会フォーム固有。PK = events の (user_id, seq) */
+export const userWithdrawals = sqliteTable(
+  'user_withdrawals',
+  {
+    userId: text('user_id').notNull(),
+    seq: integer('seq').notNull(),
+    reasonCode: text('reason_code').notNull(),
+    reasonText: text('reason_text'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.seq] })],
+)
 
-export const userBans = sqliteTable('user_bans', {
-  eventId: integer('event_id')
-    .primaryKey()
-    .references(() => userStatusEvents.id),
+/** BAN フォーム固有。「誰が」は events.actor_id */
+export const userBans = sqliteTable(
+  'user_bans',
+  {
+    userId: text('user_id').notNull(),
+    seq: integer('seq').notNull(),
+    reasonCode: text('reason_code').notNull(),
+    reasonText: text('reason_text'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.seq] })],
+)
+
+/** BAN 解除 stub（将来のフォーム列用）。操作者は events.actor_id */
+export const userUnbans = sqliteTable(
+  'user_unbans',
+  {
+    userId: text('user_id').notNull(),
+    seq: integer('seq').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.seq] })],
+)
+
+/** 管理者による不可逆操作の監査（status 遷移とは独立） */
+export const adminAuditLogs = sqliteTable('admin_audit_logs', {
+  id: text('id').primaryKey(),
   adminUserId: text('admin_user_id')
     .notNull()
     .references(() => adminUsers.id),
-  reasonCode: text('reason_code').notNull(),
-  reasonText: text('reason_text'),
-  createdAt: text('created_at').notNull(),
-})
-
-/** BAN 解除の操作者（理由は不要。admin 表示解決用） */
-export const userUnbans = sqliteTable('user_unbans', {
-  eventId: integer('event_id')
-    .primaryKey()
-    .references(() => userStatusEvents.id),
-  adminUserId: text('admin_user_id')
+  action: text('action').notNull(), // pii_purge | pii_anonymize
+  targetUserId: text('target_user_id')
     .notNull()
-    .references(() => adminUsers.id),
+    .references(() => users.id),
   createdAt: text('created_at').notNull(),
 })
 

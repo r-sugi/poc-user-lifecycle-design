@@ -1,7 +1,8 @@
-import { and, eq, isNotNull, lt, or } from 'drizzle-orm'
+import { and, eq, isNotNull, lt, or, sql } from 'drizzle-orm'
 import { TTL } from '../../config'
 import type { Db } from '../../db/client'
 import {
+  adminAuditLogs,
   emailChangeRequests,
   passwordResets,
   signupVerifications,
@@ -11,6 +12,7 @@ import {
   users,
 } from '../../db/schema'
 import { AppError } from '../../lib/errors'
+import { newId } from '../../lib/ids'
 import type { UserRepository } from '../../repositories/UserRepository'
 
 /** 匿名化済みプロフィール判定（email ドメインで識別） */
@@ -29,8 +31,10 @@ export async function purgeUserPii(db: Db, userId: string): Promise<boolean> {
   })
   if (!profile) return false
 
-  await db.delete(userIdentities).where(eq(userIdentities.userId, userId))
-  await db.delete(userProfiles).where(eq(userProfiles.userId, userId))
+  await db.batch([
+    db.delete(userIdentities).where(eq(userIdentities.userId, userId)),
+    db.delete(userProfiles).where(eq(userProfiles.userId, userId)),
+  ])
   return true
 }
 
@@ -45,17 +49,21 @@ export async function anonymizeUserPii(db: Db, userId: string, now = new Date())
   if (!profile) return false
   if (isAnonymizedProfile(profile)) return false
 
-  await db.delete(userIdentities).where(eq(userIdentities.userId, userId))
-  await db
-    .update(userProfiles)
-    .set({
-      email: anonymizedEmailFor(userId),
-      displayName: '匿名化済み',
-      updatedAt: now.toISOString(),
-    })
-    .where(eq(userProfiles.userId, userId))
+  await db.batch([
+    db.delete(userIdentities).where(eq(userIdentities.userId, userId)),
+    db
+      .update(userProfiles)
+      .set({
+        email: anonymizedEmailFor(userId),
+        displayName: '匿名化済み',
+        updatedAt: now.toISOString(),
+      })
+      .where(eq(userProfiles.userId, userId)),
+  ])
   return true
 }
+
+const PURGE_BATCH_LIMIT = 50
 
 export class PurgeWithdrawnPiiUseCase {
   constructor(private readonly db: Db) {}
@@ -64,22 +72,32 @@ export class PurgeWithdrawnPiiUseCase {
     const graceMs = TTL.withdrawGraceDays * 24 * 60 * 60 * 1000
     const cutoff = new Date(now.getTime() - graceMs).toISOString()
 
-    const withdrawn = await this.db.select().from(users).where(eq(users.status, 'withdrawn'))
+    // 最新 withdrawn event が cutoff 以前のユーザー（users 起点 JOIN）
+    const candidates = await this.db
+      .select({
+        userId: users.id,
+      })
+      .from(users)
+      .innerJoin(
+        userStatusEvents,
+        and(eq(userStatusEvents.userId, users.id), eq(userStatusEvents.type, 'withdrawn')),
+      )
+      .where(
+        and(
+          eq(users.status, 'withdrawn'),
+          lt(userStatusEvents.createdAt, cutoff),
+          sql`${userStatusEvents.seq} = (
+            SELECT MAX(e2.seq) FROM user_status_events e2
+            WHERE e2.user_id = ${users.id} AND e2.type = 'withdrawn'
+          )`,
+        ),
+      )
+      .limit(PURGE_BATCH_LIMIT)
+
     const purgedUserIds: string[] = []
-
-    for (const u of withdrawn) {
-      const events = await this.db
-        .select()
-        .from(userStatusEvents)
-        .where(and(eq(userStatusEvents.userId, u.id), eq(userStatusEvents.type, 'withdrawn')))
-      const latest = events.sort(
-        (a: { seq: number }, b: { seq: number }) => b.seq - a.seq,
-      )[0]
-      if (!latest) continue
-      if (latest.createdAt > cutoff) continue
-
-      if (await purgeUserPii(this.db, u.id)) {
-        purgedUserIds.push(u.id)
+    for (const row of candidates) {
+      if (await purgeUserPii(this.db, row.userId)) {
+        purgedUserIds.push(row.userId)
       }
     }
 
@@ -97,6 +115,19 @@ function assertBannedOrWithdrawn(status: string, action: string): void {
   }
 }
 
+async function insertAudit(
+  db: Db,
+  params: { adminUserId: string; action: string; targetUserId: string; createdAt: string },
+) {
+  await db.insert(adminAuditLogs).values({
+    id: newId('audit'),
+    adminUserId: params.adminUserId,
+    action: params.action,
+    targetUserId: params.targetUserId,
+    createdAt: params.createdAt,
+  })
+}
+
 /** 管理画面からの強制実行。banned / withdrawn のみ、猶予を見ない。 */
 export class ForcePurgeUserPiiUseCase {
   constructor(
@@ -104,7 +135,7 @@ export class ForcePurgeUserPiiUseCase {
     private readonly users: UserRepository,
   ) {}
 
-  async execute(input: { userId: string }): Promise<{ purged: true }> {
+  async execute(input: { userId: string; adminUserId: string }): Promise<{ purged: true }> {
     const user = await this.users.findById(input.userId)
     if (!user) throw new AppError('not_found', 'User not found', 404)
 
@@ -114,6 +145,12 @@ export class ForcePurgeUserPiiUseCase {
     if (!purged) {
       throw new AppError('already_purged', 'PII already deleted', 400)
     }
+    await insertAudit(this.db, {
+      adminUserId: input.adminUserId,
+      action: 'pii_purge',
+      targetUserId: input.userId,
+      createdAt: new Date().toISOString(),
+    })
     return { purged: true }
   }
 }
@@ -125,7 +162,7 @@ export class ForceAnonymizeUserPiiUseCase {
     private readonly users: UserRepository,
   ) {}
 
-  async execute(input: { userId: string }): Promise<{ anonymized: true }> {
+  async execute(input: { userId: string; adminUserId: string }): Promise<{ anonymized: true }> {
     const user = await this.users.findById(input.userId)
     if (!user) throw new AppError('not_found', 'User not found', 404)
 
@@ -135,6 +172,12 @@ export class ForceAnonymizeUserPiiUseCase {
     if (!anonymized) {
       throw new AppError('already_anonymized', 'PII already anonymized or deleted', 400)
     }
+    await insertAudit(this.db, {
+      adminUserId: input.adminUserId,
+      action: 'pii_anonymize',
+      targetUserId: input.userId,
+      createdAt: new Date().toISOString(),
+    })
     return { anonymized: true }
   }
 }
@@ -149,7 +192,6 @@ export class PurgeExpiredTokensUseCase {
   }> {
     const nowIso = now.toISOString()
 
-    // 消費済み OR 期限切れ
     const signupRes = await this.db
       .delete(signupVerifications)
       .where(

@@ -269,8 +269,7 @@ export async function adminUsersListPage(c: Context<AppBindings>) {
                 <thead class="border-b border-neutral-200 bg-neutral-50">
                   <tr>
                     <th class={thClass}>email（PII）</th>
-                    <th class={thClass}>作成日時</th>
-                    <th class={thClass}>更新日時</th>
+                    <th class={thClass}>status</th>
                     <th class={thClass}>アクション</th>
                   </tr>
                 </thead>
@@ -279,16 +278,17 @@ export async function adminUsersListPage(c: Context<AppBindings>) {
                     <tr class="transition-colors hover:bg-neutral-50" key={u.userId}>
                       <td class={tdClass}>
                         <div class="flex flex-col gap-0.5">
-                          <span class="font-medium text-neutral-900">{u.email}</span>
-                          <span class="text-xs text-neutral-500">{u.displayName}</span>
+                          {u.profileMissing ? (
+                            <span class="font-medium text-neutral-500">PII削除済み</span>
+                          ) : (
+                            <>
+                              <span class="font-medium text-neutral-900">{u.email}</span>
+                              <span class="text-xs text-neutral-500">{u.displayName}</span>
+                            </>
+                          )}
                         </div>
                       </td>
-                      <td class={`${tdClass} whitespace-nowrap font-mono text-xs text-neutral-600`}>
-                        {formatJst(u.createdAt)}
-                      </td>
-                      <td class={`${tdClass} whitespace-nowrap font-mono text-xs text-neutral-600`}>
-                        {formatJst(u.updatedAt)}
-                      </td>
+                      <td class={`${tdClass} font-mono text-xs text-neutral-600`}>{u.status}</td>
                       <td class={tdClass}>
                         <a class={btnSecondary} href={`/admin/users/${u.userId}`}>
                           詳細
@@ -327,13 +327,22 @@ export async function adminUserDetailPage(c: Context<AppBindings>) {
       })
       setFlash(c, 'BAN 解除しました')
     } else if (action === 'cancelWithdraw') {
-      await container.cancelWithdraw.execute({ userId: id })
+      await container.cancelWithdraw.execute({
+        userId: id,
+        adminUserId: c.get('adminId')!,
+      })
       setFlash(c, '退会を取り消しました')
     } else if (action === 'purgePii') {
-      await container.forcePurgeUserPii.execute({ userId: id })
+      await container.forcePurgeUserPii.execute({
+        userId: id,
+        adminUserId: c.get('adminId')!,
+      })
       setFlash(c, 'PII を削除しました')
     } else if (action === 'anonymizePii') {
-      await container.forceAnonymizeUserPii.execute({ userId: id })
+      await container.forceAnonymizeUserPii.execute({
+        userId: id,
+        adminUserId: c.get('adminId')!,
+      })
       setFlash(c, 'PII を匿名化しました')
     }
     return c.redirect(`/admin/users/${id}`)

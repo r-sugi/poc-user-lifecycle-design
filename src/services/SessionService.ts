@@ -168,6 +168,19 @@ export class SessionService {
     return keys.length
   }
 
+  async revokeAllAdminSessions(adminId: string): Promise<number> {
+    const prefix = `session:admin:${adminId}:`
+    const keys = await this.kv.listPrefix(prefix)
+    for (const key of keys) {
+      const tokenHash = key.slice(prefix.length)
+      await this.kv.delete(key)
+      if (tokenHash) {
+        await this.kv.delete(this.tokenLookupKey('admin', tokenHash))
+      }
+    }
+    return keys.length
+  }
+
   async listUserSessions(userId: string): Promise<Array<{ key: string; payload: SessionPayload }>> {
     const keys = await this.kv.listPrefix(`session:user:${userId}:`)
     const out: Array<{ key: string; payload: SessionPayload }> = []

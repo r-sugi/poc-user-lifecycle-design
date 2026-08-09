@@ -27,12 +27,13 @@ export class UserStatusTransitionService {
     })
   }
 
-  async cancelWithdraw(params: { userId: string }): Promise<void> {
+  async cancelWithdraw(params: { userId: string; adminUserId: string }): Promise<void> {
     await this.transition({
       userId: params.userId,
       to: UserStatus.active(),
       eventType: StatusEventType.WithdrawCancelled,
       actorType: ActorType.Admin,
+      actorId: params.adminUserId,
       revoke: null,
     })
   }
@@ -48,8 +49,8 @@ export class UserStatusTransitionService {
       to: UserStatus.of('banned'),
       eventType: StatusEventType.Banned,
       actorType: ActorType.Admin,
+      actorId: params.adminUserId,
       ban: {
-        adminUserId: params.adminUserId,
         reasonCode: params.reasonCode,
         reasonText: params.reasonText,
       },
@@ -63,7 +64,8 @@ export class UserStatusTransitionService {
       to: UserStatus.active(),
       eventType: StatusEventType.Unbanned,
       actorType: ActorType.Admin,
-      unban: { adminUserId: params.adminUserId },
+      actorId: params.adminUserId,
+      unban: {},
       revoke: null,
     })
   }
@@ -73,9 +75,10 @@ export class UserStatusTransitionService {
     to: UserStatus
     eventType: string
     actorType: string
+    actorId?: string
     withdrawal?: { reasonCode: string; reasonText?: string }
-    ban?: { adminUserId: string; reasonCode: string; reasonText?: string }
-    unban?: { adminUserId: string }
+    ban?: { reasonCode: string; reasonText?: string }
+    unban?: Record<string, never>
     revoke: SessionRevocationMessage['reason'] | null
   }): Promise<void> {
     const user = await this.users.findById(params.userId)
@@ -98,6 +101,7 @@ export class UserStatusTransitionService {
       event: {
         type: params.eventType,
         actorType: params.actorType,
+        actorId: params.actorId ?? null,
         createdAt: now,
       },
       withdrawal: params.withdrawal
@@ -109,18 +113,12 @@ export class UserStatusTransitionService {
         : undefined,
       ban: params.ban
         ? {
-            adminUserId: params.ban.adminUserId,
             reasonCode: params.ban.reasonCode,
             reasonText: params.ban.reasonText ?? null,
             createdAt: now,
           }
         : undefined,
-      unban: params.unban
-        ? {
-            adminUserId: params.unban.adminUserId,
-            createdAt: now,
-          }
-        : undefined,
+      unban: params.unban ? { createdAt: now } : undefined,
     })
 
     if (params.revoke) {

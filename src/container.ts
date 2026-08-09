@@ -4,6 +4,7 @@ import { GoogleAuthMockGateway } from './gateways/GoogleAuthMockGateway'
 import { MailerGateway } from './gateways/MailerGateway'
 import { SessionKvGateway } from './gateways/SessionKvGateway'
 import { SessionRevocationQueueGateway } from './gateways/SessionRevocationQueueGateway'
+import { UserEventTimelineQuery } from './queries/UserEventTimelineQuery'
 import { AdminUserRepository } from './repositories/AdminUserRepository'
 import { EmailChangeRequestRepository } from './repositories/EmailChangeRequestRepository'
 import { PasswordResetRepository } from './repositories/PasswordResetRepository'
@@ -12,12 +13,13 @@ import {
   SeedUserLabelRepository,
 } from './repositories/SeedLabelRepositories'
 import { SignupVerificationRepository } from './repositories/SignupVerificationRepository'
-import { UserBanRepository, UserUnbanRepository } from './repositories/UserBanRepository'
+import { UserBanRepository } from './repositories/UserBanRepository'
 import { UserIdentityRepository } from './repositories/UserIdentityRepository'
 import { UserProfileRepository } from './repositories/UserProfileRepository'
 import { UserRepository } from './repositories/UserRepository'
 import { UserStatusEventRepository } from './repositories/UserStatusEventRepository'
 import { CurrentLifecycleStateResolver } from './services/CurrentLifecycleStateResolver'
+import { DisableAdminService } from './services/DisableAdminService'
 import { PasswordHashingService } from './services/PasswordHashingService'
 import { SessionService } from './services/SessionService'
 import { TokenIssuingService } from './services/TokenIssuingService'
@@ -30,6 +32,12 @@ import {
   UnbanUserUseCase,
 } from './usecases/admin/AdminUseCases'
 import { ListVerificationHomeUseCase } from './usecases/admin/ListVerificationHomeUseCase'
+import {
+  ForceAnonymizeUserPiiUseCase,
+  ForcePurgeUserPiiUseCase,
+} from './usecases/batch/BatchUseCases'
+import { DevLoginAsAdminUseCase } from './usecases/dev/DevLoginAsAdminUseCase'
+import { DevLoginAsUseCase } from './usecases/dev/DevLoginAsUseCase'
 import {
   ChangePasswordUseCase,
   RequestEmailChangeUseCase,
@@ -45,12 +53,6 @@ import {
 import { ResendSignupVerificationUseCase } from './usecases/signup/ResendSignupVerificationUseCase'
 import { SignupUseCase } from './usecases/signup/SignupUseCase'
 import { VerifySignupUseCase } from './usecases/signup/VerifySignupUseCase'
-import { DevLoginAsAdminUseCase } from './usecases/dev/DevLoginAsAdminUseCase'
-import { DevLoginAsUseCase } from './usecases/dev/DevLoginAsUseCase'
-import {
-  ForceAnonymizeUserPiiUseCase,
-  ForcePurgeUserPiiUseCase,
-} from './usecases/batch/BatchUseCases'
 import { CancelWithdrawUseCase, WithdrawUseCase } from './usecases/withdraw/WithdrawUseCases'
 
 export type AppBindings = {
@@ -72,7 +74,7 @@ export function createContainer(c: Context<AppBindings>) {
   const adminRepo = new AdminUserRepository(db)
   const eventRepo = new UserStatusEventRepository(db)
   const banRepo = new UserBanRepository(db)
-  const unbanRepo = new UserUnbanRepository(db)
+  const timelineQuery = new UserEventTimelineQuery(db)
   const seedUserLabelRepo = new SeedUserLabelRepository(db)
   const seedSignupLabelRepo = new SeedSignupLabelRepository(db)
 
@@ -86,6 +88,7 @@ export function createContainer(c: Context<AppBindings>) {
   const sessionService = new SessionService(sessionKv, tokenIssuing, c.env.APP_ENV)
   const lifecycleResolver = new CurrentLifecycleStateResolver()
   const statusTransitions = new UserStatusTransitionService(userRepo, revocationQueue)
+  const disableAdmin = new DisableAdminService(adminRepo, sessionService)
 
   return {
     db,
@@ -98,7 +101,7 @@ export function createContainer(c: Context<AppBindings>) {
     adminRepo,
     eventRepo,
     banRepo,
-    unbanRepo,
+    timelineQuery,
     seedUserLabelRepo,
     seedSignupLabelRepo,
     sessionKv,
@@ -110,6 +113,7 @@ export function createContainer(c: Context<AppBindings>) {
     sessionService,
     lifecycleResolver,
     statusTransitions,
+    disableAdmin,
     signup: new SignupUseCase(
       signupRepo,
       profileRepo,
@@ -157,13 +161,19 @@ export function createContainer(c: Context<AppBindings>) {
       revocationQueue,
     ),
     requestEmailChange: new RequestEmailChangeUseCase(
+      userRepo,
       profileRepo,
       emailChangeRepo,
       tokenIssuing,
       mailer,
     ),
     verifyEmailChange: new VerifyEmailChangeUseCase(emailChangeRepo, profileRepo, tokenIssuing),
-    changePassword: new ChangePasswordUseCase(identityRepo, passwordHashing, revocationQueue),
+    changePassword: new ChangePasswordUseCase(
+      userRepo,
+      identityRepo,
+      passwordHashing,
+      revocationQueue,
+    ),
     getMe: new GetMeUseCase(
       userRepo,
       profileRepo,
@@ -173,20 +183,17 @@ export function createContainer(c: Context<AppBindings>) {
       emailChangeRepo,
       passwordResetRepo,
     ),
-    updateProfile: new UpdateProfileUseCase(profileRepo),
+    updateProfile: new UpdateProfileUseCase(userRepo, profileRepo),
     withdraw: new WithdrawUseCase(statusTransitions),
     cancelWithdraw: new CancelWithdrawUseCase(userRepo, eventRepo, statusTransitions),
     adminLogin: new AdminLoginUseCase(adminRepo, passwordHashing, sessionService),
     devLoginAsAdmin: new DevLoginAsAdminUseCase(adminRepo, sessionService),
-    searchUsers: new SearchUsersUseCase(profileRepo),
+    searchUsers: new SearchUsersUseCase(userRepo),
     getUserDetail: new GetUserDetailUseCase(
       userRepo,
       profileRepo,
       identityRepo,
-      eventRepo,
-      banRepo,
-      unbanRepo,
-      adminRepo,
+      timelineQuery,
       sessionService,
       emailChangeRepo,
       passwordResetRepo,

@@ -2,14 +2,13 @@ import type { Context } from 'hono'
 import { Email } from '../../domain/shared/Email'
 import { ReasonCode } from '../../domain/shared/ReasonCode'
 import { AppError } from '../../lib/errors'
+import type { UserEventTimelineQuery } from '../../queries/UserEventTimelineQuery'
 import type { AdminUserRepository } from '../../repositories/AdminUserRepository'
 import type { EmailChangeRequestRepository } from '../../repositories/EmailChangeRequestRepository'
 import type { PasswordResetRepository } from '../../repositories/PasswordResetRepository'
-import type { UserBanRepository, UserUnbanRepository } from '../../repositories/UserBanRepository'
 import type { UserIdentityRepository } from '../../repositories/UserIdentityRepository'
 import type { UserProfileRepository } from '../../repositories/UserProfileRepository'
 import type { UserRepository } from '../../repositories/UserRepository'
-import type { UserStatusEventRepository } from '../../repositories/UserStatusEventRepository'
 import type { PasswordHashingService } from '../../services/PasswordHashingService'
 import type { SessionService } from '../../services/SessionService'
 import type { UserStatusTransitionService } from '../../services/UserStatusTransitionService'
@@ -43,14 +42,19 @@ export class AdminLoginUseCase {
   }
 }
 
-export class SearchUsersUseCase {
-  constructor(private readonly profiles: UserProfileRepository) {}
+export type UserSearchRow = {
+  userId: string
+  status: string
+  email: string | null
+  displayName: string | null
+  profileMissing: boolean
+}
 
-  async execute(emailQuery?: string) {
-    if (emailQuery && emailQuery.trim()) {
-      return this.profiles.searchByEmail(emailQuery.trim())
-    }
-    return this.profiles.listAll()
+export class SearchUsersUseCase {
+  constructor(private readonly users: UserRepository) {}
+
+  async execute(emailQuery?: string): Promise<UserSearchRow[]> {
+    return this.users.searchWithProfiles(emailQuery?.trim() || undefined)
   }
 }
 
@@ -59,10 +63,7 @@ export class GetUserDetailUseCase {
     private readonly users: UserRepository,
     private readonly profiles: UserProfileRepository,
     private readonly identities: UserIdentityRepository,
-    private readonly events: UserStatusEventRepository,
-    private readonly bans: UserBanRepository,
-    private readonly unbans: UserUnbanRepository,
-    private readonly admins: AdminUserRepository,
+    private readonly timeline: UserEventTimelineQuery,
     private readonly sessions: SessionService,
     private readonly emailChanges: EmailChangeRequestRepository,
     private readonly passwordResets: PasswordResetRepository,
@@ -73,27 +74,9 @@ export class GetUserDetailUseCase {
     if (!user) throw new AppError('not_found', 'User not found', 404)
     const profile = await this.profiles.findByUserId(userId)
     const identities = await this.identities.listByUserId(userId)
-    const events = await this.events.listByUserId(userId)
+    const events = await this.timeline.listByUserId(userId)
     const sessions = await this.sessions.listUserSessions(userId)
-    const ban = await this.bans.findLatestForUser(userId)
-    const adminEmailById = new Map<string, string>()
-    const eventsWithActor = []
-    for (const e of events) {
-      let actorName: string | null = null
-      if (e.actorType === 'admin') {
-        const adminId = await this.resolveAdminActorId(e)
-        if (adminId) {
-          let email = adminEmailById.get(adminId)
-          if (email === undefined) {
-            const admin = await this.admins.findById(adminId)
-            email = admin?.email ?? adminId
-            adminEmailById.set(adminId, email)
-          }
-          actorName = email
-        }
-      }
-      eventsWithActor.push({ ...e, actorName })
-    }
+    const ban = await this.timeline.findLatestBan(userId)
     return {
       user: {
         id: userId,
@@ -103,26 +86,20 @@ export class GetUserDetailUseCase {
       },
       profile,
       identities,
-      events: eventsWithActor,
+      events,
       sessions: sessions.map((s) => ({ key: s.key, ...s.payload })),
-      latestBan: ban,
+      latestBan: ban
+        ? {
+            event: ban.event,
+            ban: {
+              ...ban.ban,
+              adminUserId: ban.event.actorId,
+            },
+          }
+        : null,
       pendingEmailChange: await this.emailChanges.hasPending(userId),
       pendingPasswordReset: await this.passwordResets.hasPending(userId),
     }
-  }
-
-  /** banned → user_bans / unbanned → user_unbans。admin 参照が無ければ null（表示は actor_type ラベルへ） */
-  private async resolveAdminActorId(e: {
-    id: number
-    type: string
-  }): Promise<string | null> {
-    if (e.type === 'banned') {
-      return (await this.bans.findByEventId(e.id))?.adminUserId ?? null
-    }
-    if (e.type === 'unbanned') {
-      return (await this.unbans.findByEventId(e.id))?.adminUserId ?? null
-    }
-    return null
   }
 }
 

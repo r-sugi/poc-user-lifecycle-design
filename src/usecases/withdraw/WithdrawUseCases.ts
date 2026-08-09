@@ -26,7 +26,7 @@ export class CancelWithdrawUseCase {
     private readonly transitions: UserStatusTransitionService,
   ) {}
 
-  async execute(input: { userId: string }) {
+  async execute(input: { userId: string; adminUserId: string }) {
     const user = await this.users.findById(input.userId)
     if (!user) throw new AppError('not_found', 'User not found', 404)
     if (user.getStatus().raw !== 'withdrawn') {
@@ -38,7 +38,10 @@ export class CancelWithdrawUseCase {
     if (Date.now() - new Date(withdrawn.createdAt).getTime() > graceMs) {
       throw new AppError('grace_expired', 'Withdraw grace period expired', 400)
     }
-    await this.transitions.cancelWithdraw({ userId: input.userId })
+    await this.transitions.cancelWithdraw({
+      userId: input.userId,
+      adminUserId: input.adminUserId,
+    })
     return { ok: true as const }
   }
 }

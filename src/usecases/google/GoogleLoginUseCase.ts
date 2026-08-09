@@ -38,6 +38,9 @@ export class GoogleLoginUseCase {
     c?: Context,
   ) {
     const profile = this.google.decodeCode(decodeURIComponent(input.code))
+    if (!profile.emailVerified) {
+      throw new AppError('email_not_verified', 'Google email is not verified', 400)
+    }
     const email = profile.email.toLowerCase()
     const existingIdentity = await this.identities.findByProvider('google', profile.sub)
     let userId: string

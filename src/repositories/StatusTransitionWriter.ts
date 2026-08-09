@@ -13,6 +13,7 @@ export type StatusTransitionParams = {
   event: {
     type: string
     actorType: string
+    actorId?: string | null
     createdAt: string
   }
   withdrawal?: {
@@ -21,82 +22,64 @@ export type StatusTransitionParams = {
     createdAt: string
   }
   ban?: {
-    adminUserId: string
     reasonCode: string
     reasonText?: string | null
     createdAt: string
   }
   unban?: {
-    adminUserId: string
     createdAt: string
   }
 }
 
 /**
- * 方針 B: 単発 events INSERT（UNIQUE で CAS）→ 成功時のみ batch([詳細, users UPDATE])
- * 失敗時のズレは「履歴あり・キャッシュ古い」方向（設計書 §7.2）
+ * event INSERT（UNIQUE(user_id,seq) が CAS）+ 詳細 INSERT + users UPDATE を同一 batch。
+ * UNIQUE 違反は例外 → batch 全体ロールバック。
  */
 export class StatusTransitionWriter {
   constructor(private readonly db: Db) {}
 
   async apply(params: StatusTransitionParams): Promise<void> {
-    const phase = await this.insertEventCas(params)
-    if (phase === 'done') return
-
-    const event = await this.db.query.userStatusEvents.findFirst({
-      where: and(
-        eq(userStatusEvents.userId, params.userId),
-        eq(userStatusEvents.seq, params.nextSeq),
-      ),
-    })
-    if (!event) throw new AppError('internal_error', 'Failed to write status event', 500)
-
-    const statements: BatchItem<'sqlite'>[] = []
+    const statements: BatchItem<'sqlite'>[] = [
+      this.db.insert(userStatusEvents).values({
+        userId: params.userId,
+        seq: params.nextSeq,
+        type: params.event.type,
+        actorType: params.event.actorType,
+        actorId: params.event.actorId ?? null,
+        createdAt: params.event.createdAt,
+      }),
+    ]
 
     if (params.withdrawal) {
-      const existing = await this.db.query.userWithdrawals.findFirst({
-        where: eq(userWithdrawals.eventId, event.id),
-      })
-      if (!existing) {
-        statements.push(
-          this.db.insert(userWithdrawals).values({
-            eventId: event.id,
-            reasonCode: params.withdrawal.reasonCode,
-            reasonText: params.withdrawal.reasonText ?? null,
-            createdAt: params.withdrawal.createdAt,
-          }),
-        )
-      }
+      statements.push(
+        this.db.insert(userWithdrawals).values({
+          userId: params.userId,
+          seq: params.nextSeq,
+          reasonCode: params.withdrawal.reasonCode,
+          reasonText: params.withdrawal.reasonText ?? null,
+          createdAt: params.withdrawal.createdAt,
+        }),
+      )
     }
     if (params.ban) {
-      const existing = await this.db.query.userBans.findFirst({
-        where: eq(userBans.eventId, event.id),
-      })
-      if (!existing) {
-        statements.push(
-          this.db.insert(userBans).values({
-            eventId: event.id,
-            adminUserId: params.ban.adminUserId,
-            reasonCode: params.ban.reasonCode,
-            reasonText: params.ban.reasonText ?? null,
-            createdAt: params.ban.createdAt,
-          }),
-        )
-      }
+      statements.push(
+        this.db.insert(userBans).values({
+          userId: params.userId,
+          seq: params.nextSeq,
+          reasonCode: params.ban.reasonCode,
+          reasonText: params.ban.reasonText ?? null,
+          createdAt: params.ban.createdAt,
+        }),
+      )
     }
     if (params.unban) {
-      const existing = await this.db.query.userUnbans.findFirst({
-        where: eq(userUnbans.eventId, event.id),
-      })
-      if (!existing) {
-        statements.push(
-          this.db.insert(userUnbans).values({
-            eventId: event.id,
-            adminUserId: params.unban.adminUserId,
-            createdAt: params.unban.createdAt,
-          }),
-        )
-      }
+      statements.push(
+        this.db.insert(userUnbans).values({
+          userId: params.userId,
+          seq: params.nextSeq,
+          createdAt: params.unban.createdAt,
+        }),
+      )
     }
 
     statements.push(
@@ -107,70 +90,22 @@ export class StatusTransitionWriter {
           lastSeq: params.nextSeq,
           updatedAt: params.updatedAt,
         })
-        .where(and(eq(users.id, params.userId), eq(users.lastSeq, params.expectedSeq)))
-        .returning({ id: users.id }),
+        .where(eq(users.id, params.userId)),
     )
 
     const first = statements[0]
     if (!first) throw new AppError('internal_error', 'Empty status transition batch', 500)
 
     try {
-      const results = await this.db.batch([first, ...statements.slice(1)])
-      const updateResult = results[results.length - 1] as { id: string }[]
-      if (!Array.isArray(updateResult) || updateResult.length === 0) {
-        await this.assertSettledOrConflict(params)
-      }
+      await this.db.batch([first, ...statements.slice(1)])
     } catch (e) {
       if (!isUniqueViolation(e)) throw e
-      // 並行リトライで詳細 INSERT が先勝ち UNIQUE。完了済みなら成功、未更新なら UPDATE のみ。
-      if (await this.isSettled(params)) return
-      await this.updateUserCache(params)
+      await this.resolveUniqueConflict(params)
     }
   }
 
-  private async isSettled(params: StatusTransitionParams): Promise<boolean> {
-    const current = await this.db.query.users.findFirst({ where: eq(users.id, params.userId) })
-    return current?.lastSeq === params.nextSeq && current.status === params.nextStatus
-  }
-
-  private async assertSettledOrConflict(params: StatusTransitionParams): Promise<void> {
-    if (await this.isSettled(params)) return
-    throw new AppError(
-      'optimistic_lock_conflict',
-      'Status update conflict (event written, cache stale)',
-      409,
-    )
-  }
-
-  private async updateUserCache(params: StatusTransitionParams): Promise<void> {
-    const updated = await this.db
-      .update(users)
-      .set({
-        status: params.nextStatus,
-        lastSeq: params.nextSeq,
-        updatedAt: params.updatedAt,
-      })
-      .where(and(eq(users.id, params.userId), eq(users.lastSeq, params.expectedSeq)))
-      .returning({ id: users.id })
-    if (updated.length > 0) return
-    await this.assertSettledOrConflict(params)
-  }
-
-  /** @returns done = 既に完了 / continue = batch へ進む */
-  private async insertEventCas(params: StatusTransitionParams): Promise<'done' | 'continue'> {
-    try {
-      await this.db.insert(userStatusEvents).values({
-        userId: params.userId,
-        seq: params.nextSeq,
-        type: params.event.type,
-        actorType: params.event.actorType,
-        createdAt: params.event.createdAt,
-      })
-      return 'continue'
-    } catch (e) {
-      if (!isUniqueViolation(e)) throw e
-    }
-
+  /** 並行リトライ: 同一イベントが既にあれば成功扱い、異なる遷移なら 409 */
+  private async resolveUniqueConflict(params: StatusTransitionParams): Promise<void> {
     const existing = await this.db.query.userStatusEvents.findFirst({
       where: and(
         eq(userStatusEvents.userId, params.userId),
@@ -180,13 +115,13 @@ export class StatusTransitionWriter {
     if (!existing) {
       throw new AppError('optimistic_lock_conflict', 'Status update conflict', 409)
     }
-
     const current = await this.db.query.users.findFirst({ where: eq(users.id, params.userId) })
-    if (current?.lastSeq === params.nextSeq && current.status === params.nextStatus) {
-      return 'done'
-    }
-    if (current?.lastSeq === params.expectedSeq && existing.type === params.event.type) {
-      return 'continue'
+    if (
+      existing.type === params.event.type &&
+      current?.lastSeq === params.nextSeq &&
+      current.status === params.nextStatus
+    ) {
+      return
     }
     throw new AppError('optimistic_lock_conflict', 'Status update conflict', 409)
   }

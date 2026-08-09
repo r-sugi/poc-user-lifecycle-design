@@ -1,3 +1,4 @@
+import { assertUserActive } from '../../lib/assertUserActive'
 import { AppError } from '../../lib/errors'
 import type { EmailChangeRequestRepository } from '../../repositories/EmailChangeRequestRepository'
 import type { PasswordResetRepository } from '../../repositories/PasswordResetRepository'
@@ -21,9 +22,8 @@ export class GetMeUseCase {
   async execute(userId: string) {
     const user = await this.users.findById(userId)
     if (!user) throw new AppError('not_found', 'User not found', 404)
+    assertUserActive(user)
     const status = user.getStatus().raw
-    if (status === 'banned') throw new AppError('banned', 'User is banned', 401)
-    if (status === 'withdrawn') throw new AppError('withdrawn', 'User is withdrawn', 401)
     const profile = await this.profiles.findByUserId(userId)
     const identities = await this.identities.listByUserId(userId)
     const events = await this.events.listByUserId(userId)
@@ -46,9 +46,15 @@ export class GetMeUseCase {
 }
 
 export class UpdateProfileUseCase {
-  constructor(private readonly profiles: UserProfileRepository) {}
+  constructor(
+    private readonly users: UserRepository,
+    private readonly profiles: UserProfileRepository,
+  ) {}
 
   async execute(input: { userId: string; displayName: string }) {
+    const user = await this.users.findById(input.userId)
+    if (!user) throw new AppError('not_found', 'User not found', 404)
+    assertUserActive(user)
     const profile = await this.profiles.findByUserId(input.userId)
     if (!profile) throw new AppError('not_found', 'Profile missing', 404)
     await this.profiles.update(input.userId, {

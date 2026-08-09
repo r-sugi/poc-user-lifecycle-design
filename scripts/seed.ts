@@ -7,8 +7,8 @@
 import { getPlatformProxy } from 'wrangler'
 import { createDb } from '../src/db/client'
 import * as schema from '../src/db/schema'
+
 import { PasswordHashingService } from '../src/services/PasswordHashingService'
-import { eq, and } from 'drizzle-orm'
 
 function daysOffset(days: number, base = new Date()): string {
   return new Date(base.getTime() + days * 24 * 60 * 60 * 1000).toISOString()
@@ -291,6 +291,10 @@ async function main() {
     for (const ev of u.events) {
       seq += 1
       const created = daysOffset(-ev.daysAgo, base)
+      const actorId =
+        ev.type === 'banned' || ev.type === 'unbanned' || ev.type === 'withdraw_cancelled'
+          ? (ev.adminId ?? null)
+          : null
       await db.insert(schema.userStatusEvents).values({
         userId: u.id,
         seq,
@@ -299,33 +303,31 @@ async function main() {
           ev.type === 'banned' || ev.type === 'unbanned' || ev.type === 'withdraw_cancelled'
             ? 'admin'
             : 'user',
+        actorId,
         createdAt: created,
       })
-      const found = await db.query.userStatusEvents.findFirst({
-        where: and(eq(schema.userStatusEvents.userId, u.id), eq(schema.userStatusEvents.seq, seq)),
-      })
-      if (!found) throw new Error(`event insert failed ${u.id} seq=${seq}`)
       if (ev.type === 'withdrawn' && ev.reasonCode) {
         await db.insert(schema.userWithdrawals).values({
-          eventId: found.id,
+          userId: u.id,
+          seq,
           reasonCode: ev.reasonCode,
           reasonText: null,
           createdAt: created,
         })
       }
-      if (ev.type === 'banned' && ev.reasonCode && ev.adminId) {
+      if (ev.type === 'banned' && ev.reasonCode) {
         await db.insert(schema.userBans).values({
-          eventId: found.id,
-          adminUserId: ev.adminId,
+          userId: u.id,
+          seq,
           reasonCode: ev.reasonCode,
           reasonText: null,
           createdAt: created,
         })
       }
-      if (ev.type === 'unbanned' && ev.adminId) {
+      if (ev.type === 'unbanned') {
         await db.insert(schema.userUnbans).values({
-          eventId: found.id,
-          adminUserId: ev.adminId,
+          userId: u.id,
+          seq,
           createdAt: created,
         })
       }
