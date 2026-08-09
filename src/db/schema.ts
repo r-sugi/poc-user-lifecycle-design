@@ -1,4 +1,12 @@
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import {
+  foreignKey,
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable(
   'users',
@@ -6,6 +14,7 @@ export const users = sqliteTable(
     id: text('id').primaryKey(),
     status: text('status').notNull(), // active | withdrawn | banned
     lastSeq: integer('last_seq').notNull().default(0),
+    /** アカウント確定時刻。password: メール検証完了 / google: 初回ログイン成立（callback） */
     verifiedAt: text('verified_at').notNull(),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
@@ -141,7 +150,13 @@ export const userWithdrawals = sqliteTable(
     reasonText: text('reason_text'),
     createdAt: text('created_at').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.seq] })],
+  (t) => [
+    primaryKey({ columns: [t.userId, t.seq] }),
+    foreignKey({
+      columns: [t.userId, t.seq],
+      foreignColumns: [userStatusEvents.userId, userStatusEvents.seq],
+    }),
+  ],
 )
 
 /** BAN フォーム固有。「誰が」は events.actor_id */
@@ -154,7 +169,13 @@ export const userBans = sqliteTable(
     reasonText: text('reason_text'),
     createdAt: text('created_at').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.seq] })],
+  (t) => [
+    primaryKey({ columns: [t.userId, t.seq] }),
+    foreignKey({
+      columns: [t.userId, t.seq],
+      foreignColumns: [userStatusEvents.userId, userStatusEvents.seq],
+    }),
+  ],
 )
 
 /** BAN 解除 stub（将来のフォーム列用）。操作者は events.actor_id */
@@ -165,7 +186,13 @@ export const userUnbans = sqliteTable(
     seq: integer('seq').notNull(),
     createdAt: text('created_at').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.seq] })],
+  (t) => [
+    primaryKey({ columns: [t.userId, t.seq] }),
+    foreignKey({
+      columns: [t.userId, t.seq],
+      foreignColumns: [userStatusEvents.userId, userStatusEvents.seq],
+    }),
+  ],
 )
 
 /** 管理者による不可逆操作の監査（status 遷移とは独立） */

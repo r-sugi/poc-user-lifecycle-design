@@ -1,9 +1,8 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { userProfiles, users } from '../db/schema'
 import { User } from '../domain/user/User'
-import { AppError } from '../lib/errors'
-import { StatusTransitionWriter, type StatusTransitionParams } from './StatusTransitionWriter'
+import { type StatusTransitionParams, StatusTransitionWriter } from './StatusTransitionWriter'
 
 export class UserRepository {
   private readonly transitions: StatusTransitionWriter
@@ -82,30 +81,5 @@ export class UserRepository {
   /** 方針 B の原子的ステータス遷移（詳細は StatusTransitionWriter） */
   async applyStatusTransition(params: StatusTransitionParams): Promise<void> {
     await this.transitions.apply(params)
-  }
-
-  async updateStatusOptimistic(params: {
-    id: string
-    expectedSeq: number
-    nextStatus: string
-    nextSeq: number
-    updatedAt: string
-  }): Promise<boolean> {
-    const result = await this.db
-      .update(users)
-      .set({
-        status: params.nextStatus,
-        lastSeq: params.nextSeq,
-        updatedAt: params.updatedAt,
-      })
-      .where(and(eq(users.id, params.id), eq(users.lastSeq, params.expectedSeq)))
-      .returning({ id: users.id })
-
-    if (result.length > 0) return true
-    const current = await this.findById(params.id)
-    if (!current || current.getLastSeq() !== params.nextSeq) {
-      throw new AppError('optimistic_lock_conflict', 'Status update conflict', 409)
-    }
-    return true
   }
 }

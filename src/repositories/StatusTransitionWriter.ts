@@ -1,12 +1,12 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
-import { userBans, userStatusEvents, userUnbans, userWithdrawals, users } from '../db/schema'
+import { userBans, userStatusEvents, users, userUnbans, userWithdrawals } from '../db/schema'
+import { isUniqueViolation } from '../lib/dbErrors'
 import { AppError } from '../lib/errors'
 
 export type StatusTransitionParams = {
   userId: string
-  expectedSeq: number
   nextStatus: string
   nextSeq: number
   updatedAt: string
@@ -33,7 +33,7 @@ export type StatusTransitionParams = {
 
 /**
  * event INSERT（UNIQUE(user_id,seq) が CAS）+ 詳細 INSERT + users UPDATE を同一 batch。
- * UNIQUE 違反は例外 → batch 全体ロールバック。
+ * UNIQUE 違反は例外 → batch 全体ロールバック → 409（後勝ちさせない）。
  */
 export class StatusTransitionWriter {
   constructor(private readonly db: Db) {}
@@ -100,35 +100,7 @@ export class StatusTransitionWriter {
       await this.db.batch([first, ...statements.slice(1)])
     } catch (e) {
       if (!isUniqueViolation(e)) throw e
-      await this.resolveUniqueConflict(params)
-    }
-  }
-
-  /** 並行リトライ: 同一イベントが既にあれば成功扱い、異なる遷移なら 409 */
-  private async resolveUniqueConflict(params: StatusTransitionParams): Promise<void> {
-    const existing = await this.db.query.userStatusEvents.findFirst({
-      where: and(
-        eq(userStatusEvents.userId, params.userId),
-        eq(userStatusEvents.seq, params.nextSeq),
-      ),
-    })
-    if (!existing) {
       throw new AppError('optimistic_lock_conflict', 'Status update conflict', 409)
     }
-    const current = await this.db.query.users.findFirst({ where: eq(users.id, params.userId) })
-    if (
-      existing.type === params.event.type &&
-      current?.lastSeq === params.nextSeq &&
-      current.status === params.nextStatus
-    ) {
-      return
-    }
-    throw new AppError('optimistic_lock_conflict', 'Status update conflict', 409)
   }
-}
-
-function isUniqueViolation(e: unknown): boolean {
-  if (!e || typeof e !== 'object') return false
-  const msg = 'message' in e && typeof e.message === 'string' ? e.message : String(e)
-  return /UNIQUE|unique|constraint/i.test(msg)
 }

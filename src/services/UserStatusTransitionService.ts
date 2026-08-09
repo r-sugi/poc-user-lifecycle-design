@@ -1,8 +1,10 @@
 import { ActorType, StatusEventType } from '../domain/shared/StatusEventEnums'
 import { UserStatus } from '../domain/user/UserStatus'
+import type {
+  SessionRevocationMessage,
+  SessionRevocationQueueGateway,
+} from '../gateways/SessionRevocationQueueGateway'
 import { AppError } from '../lib/errors'
-import type { SessionRevocationQueueGateway } from '../gateways/SessionRevocationQueueGateway'
-import type { SessionRevocationMessage } from '../gateways/SessionRevocationQueueGateway'
 import type { UserRepository } from '../repositories/UserRepository'
 
 export class UserStatusTransitionService {
@@ -94,7 +96,6 @@ export class UserStatusTransitionService {
 
     await this.users.applyStatusTransition({
       userId: params.userId,
-      expectedSeq,
       nextStatus: params.to.raw,
       nextSeq,
       updatedAt: now,

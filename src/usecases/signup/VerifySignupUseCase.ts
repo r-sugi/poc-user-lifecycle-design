@@ -1,6 +1,5 @@
-import { ActorType, StatusEventType } from '../../domain/shared/StatusEventEnums'
-import { AppError } from '../../lib/errors'
-import { newId } from '../../lib/ids'
+import { eq } from 'drizzle-orm'
+import type { Context } from 'hono'
 import type { Db } from '../../db/client'
 import {
   signupVerifications,
@@ -9,13 +8,15 @@ import {
   userStatusEvents,
   users,
 } from '../../db/schema'
-import { eq } from 'drizzle-orm'
+import { ActorType, StatusEventType } from '../../domain/shared/StatusEventEnums'
+import { isUniqueViolation } from '../../lib/dbErrors'
+import { AppError } from '../../lib/errors'
+import { newId } from '../../lib/ids'
 import type { SeedSignupLabelRepository } from '../../repositories/SeedLabelRepositories'
 import type { SignupVerificationRepository } from '../../repositories/SignupVerificationRepository'
 import type { UserProfileRepository } from '../../repositories/UserProfileRepository'
 import type { SessionService } from '../../services/SessionService'
 import type { TokenIssuingService } from '../../services/TokenIssuingService'
-import type { Context } from 'hono'
 
 export class VerifySignupUseCase {
   constructor(
@@ -27,16 +28,13 @@ export class VerifySignupUseCase {
     private readonly seedSignupLabels: SeedSignupLabelRepository,
   ) {}
 
-  async execute(
-    input: { token: string; userAgent?: string; ipAddress?: string },
-    c?: Context,
-  ) {
+  async execute(input: { token: string; userAgent?: string; ipAddress?: string }, c?: Context) {
     const hash = await this.tokens.hashRaw(input.token)
     const row = await this.signups.findByTokenHash(hash)
     if (!row) throw new AppError('invalid_token', 'Invalid token', 400)
-    if (row.consumedAt) throw new AppError('token_consumed', 'Token already used', 400)
+    if (row.consumedAt) throw new AppError('token_consumed', 'Token already used', 410)
     if (new Date(row.expiresAt).getTime() <= Date.now()) {
-      throw new AppError('token_expired', 'Token expired', 400)
+      throw new AppError('token_expired', 'Token expired', 410)
     }
 
     const existingProfile = await this.profiles.findByEmail(row.email)
@@ -102,10 +100,4 @@ export class VerifySignupUseCase {
 
     return { userId }
   }
-}
-
-function isUniqueViolation(e: unknown): boolean {
-  if (!e || typeof e !== 'object') return false
-  const msg = 'message' in e && typeof e.message === 'string' ? e.message : String(e)
-  return /UNIQUE|unique|constraint/i.test(msg)
 }

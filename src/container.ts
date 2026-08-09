@@ -147,6 +147,7 @@ export function createContainer(c: Context<AppBindings>) {
       sessionService,
     ),
     requestPasswordReset: new RequestPasswordResetUseCase(
+      userRepo,
       profileRepo,
       identityRepo,
       passwordResetRepo,
@@ -154,6 +155,8 @@ export function createContainer(c: Context<AppBindings>) {
       mailer,
     ),
     resetPassword: new ResetPasswordUseCase(
+      db,
+      userRepo,
       passwordResetRepo,
       identityRepo,
       tokenIssuing,

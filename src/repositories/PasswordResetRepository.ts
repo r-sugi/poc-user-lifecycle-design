@@ -54,6 +54,11 @@ export class PasswordResetRepository {
   }
 
   async markConsumed(id: string, consumedAt: string): Promise<void> {
-    await this.db.update(passwordResets).set({ consumedAt }).where(eq(passwordResets.id, id))
+    await this.buildMarkConsumedStatement(id, consumedAt)
+  }
+
+  /** db.batch 用。await せずに渡す */
+  buildMarkConsumedStatement(id: string, consumedAt: string) {
+    return this.db.update(passwordResets).set({ consumedAt }).where(eq(passwordResets.id, id))
   }
 }

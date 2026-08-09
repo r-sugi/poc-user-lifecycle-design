@@ -24,7 +24,10 @@ export class UserIdentityRepository {
 
   async findByProvider(provider: string, providerUid: string): Promise<UserIdentityRow | null> {
     const row = await this.db.query.userIdentities.findFirst({
-      where: and(eq(userIdentities.provider, provider), eq(userIdentities.providerUid, providerUid)),
+      where: and(
+        eq(userIdentities.provider, provider),
+        eq(userIdentities.providerUid, providerUid),
+      ),
     })
     return row ?? null
   }
@@ -41,7 +44,12 @@ export class UserIdentityRepository {
   }
 
   async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
-    await this.db.update(userIdentities).set({ passwordHash }).where(eq(userIdentities.id, id))
+    await this.buildUpdatePasswordHashStatement(id, passwordHash)
+  }
+
+  /** db.batch 用。await せずに渡す */
+  buildUpdatePasswordHashStatement(id: string, passwordHash: string) {
+    return this.db.update(userIdentities).set({ passwordHash }).where(eq(userIdentities.id, id))
   }
 
   async deleteByUserId(userId: string): Promise<void> {

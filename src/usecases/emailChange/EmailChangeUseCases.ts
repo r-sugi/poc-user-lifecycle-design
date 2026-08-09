@@ -4,6 +4,7 @@ import { Password } from '../../domain/shared/Password'
 import type { MailerGateway } from '../../gateways/MailerGateway'
 import type { SessionRevocationQueueGateway } from '../../gateways/SessionRevocationQueueGateway'
 import { assertUserActive } from '../../lib/assertUserActive'
+import { isUniqueViolation } from '../../lib/dbErrors'
 import { AppError } from '../../lib/errors'
 import { hoursFromNow, newId } from '../../lib/ids'
 import type { EmailChangeRequestRepository } from '../../repositories/EmailChangeRequestRepository'
@@ -71,9 +72,9 @@ export class VerifyEmailChangeUseCase {
     const hash = await this.tokens.hashRaw(input.token)
     const row = await this.requests.findByTokenHash(hash)
     if (!row) throw new AppError('invalid_token', 'Invalid token', 400)
-    if (row.consumedAt) throw new AppError('token_consumed', 'Token used', 400)
+    if (row.consumedAt) throw new AppError('token_consumed', 'Token used', 410)
     if (new Date(row.expiresAt).getTime() <= Date.now()) {
-      throw new AppError('token_expired', 'Token expired', 400)
+      throw new AppError('token_expired', 'Token expired', 410)
     }
     const taken = await this.profiles.findByEmail(row.newEmail)
     if (taken && taken.userId !== row.userId) {
@@ -89,12 +90,6 @@ export class VerifyEmailChangeUseCase {
     await this.requests.markConsumed(row.id, now)
     return { ok: true as const, email: row.newEmail }
   }
-}
-
-function isUniqueViolation(e: unknown): boolean {
-  if (!e || typeof e !== 'object') return false
-  const msg = 'message' in e && typeof e.message === 'string' ? e.message : String(e)
-  return /UNIQUE|unique|constraint/i.test(msg)
 }
 
 export class ChangePasswordUseCase {

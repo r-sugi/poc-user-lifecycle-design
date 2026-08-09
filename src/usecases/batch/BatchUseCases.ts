@@ -1,10 +1,11 @@
-import { and, eq, isNotNull, lt, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, lt, or, sql } from 'drizzle-orm'
 import { TTL } from '../../config'
 import type { Db } from '../../db/client'
 import {
   adminAuditLogs,
   emailChangeRequests,
   passwordResets,
+  seedSignupLabels,
   signupVerifications,
   userIdentities,
   userProfiles,
@@ -192,12 +193,26 @@ export class PurgeExpiredTokensUseCase {
   }> {
     const nowIso = now.toISOString()
 
-    const signupRes = await this.db
-      .delete(signupVerifications)
-      .where(
-        or(isNotNull(signupVerifications.consumedAt), lt(signupVerifications.expiresAt, nowIso)),
-      )
-      .returning({ id: signupVerifications.id })
+    // seed_signup_labels は通常サインアップでも書かれる（名前は seed_* だが FK で紐づく）。
+    // signup_verifications を先に消すと FK 違反になるため、同一 batch でラベル → verification の順に削除する。
+    const staleSignupIds = (
+      await this.db
+        .select({ id: signupVerifications.id })
+        .from(signupVerifications)
+        .where(
+          or(isNotNull(signupVerifications.consumedAt), lt(signupVerifications.expiresAt, nowIso)),
+        )
+    ).map((r) => r.id)
+
+    const signupCount = staleSignupIds.length
+    if (staleSignupIds.length > 0) {
+      await this.db.batch([
+        this.db
+          .delete(seedSignupLabels)
+          .where(inArray(seedSignupLabels.signupVerificationId, staleSignupIds)),
+        this.db.delete(signupVerifications).where(inArray(signupVerifications.id, staleSignupIds)),
+      ])
+    }
 
     const pwRes = await this.db
       .delete(passwordResets)
@@ -212,7 +227,7 @@ export class PurgeExpiredTokensUseCase {
       .returning({ id: emailChangeRequests.id })
 
     return {
-      signup: signupRes.length,
+      signup: signupCount,
       passwordReset: pwRes.length,
       emailChange: emailRes.length,
     }
